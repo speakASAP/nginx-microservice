@@ -43,5 +43,5 @@ services:
 networks:
   nginx-network:
     name: nginx-network
-    driver: bridge
+    external: true
 
