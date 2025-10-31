@@ -280,7 +280,11 @@ Edit domain config files in `nginx/conf.d/` or modify the template in `nginx/tem
 
 ## License
 
-[Your License Here]
+MIT License
+
+Copyright (c) 2025 Sergej
+
+See [LICENSE](LICENSE) file for details.
 
 ## Support
 
