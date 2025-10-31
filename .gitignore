@@ -1,0 +1,30 @@
+# Environment files
+.env
+
+# Certificates (sensitive data)
+certificates/
+*.pem
+*.key
+*.crt
+
+# Logs
+logs/
+*.log
+
+# Webroot (Let's Encrypt challenge files)
+webroot/.well-known/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Temporary files
+*.tmp
+*.bak
+

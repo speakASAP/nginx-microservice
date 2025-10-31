@@ -1,0 +1,47 @@
+services:
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx-microservice
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certificates:/etc/nginx/certs:ro
+      - ./logs/nginx:/var/log/nginx:rw
+      - ./webroot:/var/www/html:rw
+    networks:
+      - nginx-network
+    depends_on:
+      - certbot
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: nginx-certbot
+    restart: unless-stopped
+    volumes:
+      - ./certificates:/etc/letsencrypt:rw
+      - ./webroot:/var/www/html:rw
+      - ./logs/certbot:/var/log/certbot:rw
+      - ./certbot/scripts:/scripts:ro
+    networks:
+      - nginx-network
+    entrypoint: /bin/sh
+    command: -c "tail -f /dev/null"
+    environment:
+      - CERTBOT_EMAIL=${CERTBOT_EMAIL:-admin@statex.cz}
+      - CERTBOT_STAGING=${CERTBOT_STAGING:-false}
+
+networks:
+  nginx-network:
+    name: nginx-network
+    driver: bridge
+
