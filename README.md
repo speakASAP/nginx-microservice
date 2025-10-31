@@ -2,6 +2,15 @@
 
 A centralized reverse proxy microservice for managing multiple domains and subdomains with automatic SSL certificate management via Let's Encrypt.
 
+## Migration Note
+
+**✅ Migration Complete** (October 31, 2024): SSL certificates and Let's Encrypt data have been migrated from `statex-infrastructure` to this nginx-microservice. The `certificates/` directory now contains:
+- Let's Encrypt certificates from `statex-infrastructure/letsencrypt/`
+- Let's Encrypt account data from `statex-infrastructure/letsencrypt-persistent/`
+- Webroot content from `statex-infrastructure/webroot/`
+
+All SSL management is now centralized in this microservice.
+
 ## Features
 
 - 🚀 **DNS-Based Container Discovery**: Automatically discovers containers via Docker DNS

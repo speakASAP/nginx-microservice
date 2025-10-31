@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>StateX Development Server</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #333; margin-bottom: 20px; }
+        p { color: #666; line-height: 1.6; }
+        .status { background: #e8f5e8; padding: 15px; border-radius: 4px; margin: 20px 0; }
+        .warning { background: #fff3cd; padding: 15px; border-radius: 4px; margin: 20px 0; }
+        .code { background: #f8f9fa; padding: 10px; border-radius: 4px; font-family: monospace; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 StateX Development Server</h1>
+        <div class="status">
+            <strong>✅ Infrastructure Running</strong><br>
+            Nginx reverse proxy is active with self-signed SSL certificates.
+        </div>
+        <p>This is the development environment for the StateX platform. The infrastructure is running correctly with:</p>
+        <ul>
+            <li>Nginx reverse proxy</li>
+            <li>Self-signed SSL certificates</li>
+            <li>Development configuration</li>
+        </ul>
+        <div class="warning">
+            <strong>⚠️ Development Mode</strong><br>
+            This server uses self-signed certificates. Your browser will show a security warning - this is normal for development.
+        </div>
+        <p>To start the full platform, run:</p>
+        <div class="code">cd ../statex-platform && docker compose up -d</div>
+        <p>Then restart the infrastructure:</p>
+        <div class="code">make stop && make prod</div>
+    </div>
+</body>
+</html>
+
+
