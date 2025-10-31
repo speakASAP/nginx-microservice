@@ -22,13 +22,14 @@ echo "✅ SSH connection successful"
 echo ""
 
 # Execute commands on production server
-ssh "$SSH_HOST" bash <<EOF
+# Capture exit code properly
+if ssh "$SSH_HOST" bash <<'REMOTE_SCRIPT'
 set -e
 
 # Navigate to project directory
-echo "📁 Navigating to project directory: $PROJECT_DIR"
-cd "$PROJECT_DIR" || {
-    echo "❌ Error: Project directory not found: $PROJECT_DIR"
+echo "📁 Navigating to project directory: /home/statex/nginx-microservice"
+cd /home/statex/nginx-microservice || {
+    echo "❌ Error: Project directory not found: /home/statex/nginx-microservice"
     echo "   Please ensure nginx-microservice is cloned to this location"
     exit 1
 }
@@ -38,7 +39,7 @@ echo ""
 
 # Check if docker-compose.yml exists
 if [ ! -f "docker-compose.yml" ]; then
-    echo "❌ Error: docker-compose.yml not found in $PROJECT_DIR"
+    echo "❌ Error: docker-compose.yml not found"
     exit 1
 fi
 
@@ -58,17 +59,20 @@ echo ""
 
 # Check if containers are already running
 echo "🔍 Checking current container status..."
-if docker compose ps | grep -q "Up"; then
+CONTAINERS_RUNNING=false
+if docker compose ps 2>/dev/null | grep -q "Up"; then
+    CONTAINERS_RUNNING=true
     echo "⚠️  Warning: Some containers are already running"
     echo "   Current status:"
     docker compose ps
     echo ""
     read -p "Do you want to restart the service? (y/N): " -n 1 -r
     echo
-    if [[ \$REPLY =~ ^[Yy]$ ]]; then
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
         echo "Stopping existing containers..."
         docker compose down
         echo "✅ Containers stopped"
+        CONTAINERS_RUNNING=false
     else
         echo "Aborted. Containers remain running."
         exit 0
@@ -76,17 +80,30 @@ if docker compose ps | grep -q "Up"; then
     echo ""
 fi
 
-# Start services
-echo "🚀 Starting nginx-microservice..."
-docker compose up -d
+# Start services only if not running or if restarted
+if [ "$CONTAINERS_RUNNING" = "false" ]; then
+    echo "🚀 Starting nginx-microservice..."
+    docker compose up -d
 
-echo ""
-echo "✅ Services started successfully!"
-echo ""
+    echo ""
+    echo "✅ Services started successfully!"
+    echo ""
+    
+    # Wait a moment for containers to initialize
+    sleep 2
+fi
 
 # Show container status
 echo "📊 Container status:"
 docker compose ps
+
+# Check for unhealthy containers
+if docker compose ps 2>/dev/null | grep -qE "Restarting|Unhealthy"; then
+    echo ""
+    echo "⚠️  Warning: Some containers are not healthy!"
+    echo "   Check logs with: docker compose logs"
+    exit 1
+fi
 
 echo ""
 echo "📝 Useful commands:"
@@ -95,11 +112,22 @@ echo "   Stop service: docker compose down"
 echo "   Restart service: docker compose restart"
 echo "   Check nginx config: docker compose exec nginx nginx -t"
 
-EOF
+REMOTE_SCRIPT
+then
+    EXIT_CODE=0
+else
+    EXIT_CODE=$?
+fi
 
-echo ""
-echo "✅ nginx-microservice started on production server!"
-echo ""
-echo "To view logs, run:"
-echo "  ssh statex 'cd $PROJECT_DIR && docker compose logs -f'"
+if [ $EXIT_CODE -eq 0 ]; then
+    echo ""
+    echo "✅ nginx-microservice operation completed on production server!"
+    echo ""
+    echo "To view logs, run:"
+    echo "  ssh statex 'cd $PROJECT_DIR && docker compose logs -f'"
+else
+    echo ""
+    echo "❌ Operation failed or was aborted (exit code: $EXIT_CODE)"
+    exit $EXIT_CODE
+fi
 
