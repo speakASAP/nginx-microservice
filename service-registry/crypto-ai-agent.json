@@ -24,6 +24,8 @@
     }
   },
   "shared_services": ["postgres", "redis"],
+  "infrastructure_compose_file": "docker-compose.infrastructure.yml",
+  "infrastructure_project_name": "crypto_ai_agent_infrastructure",
   "network": "nginx-network"
 }
 

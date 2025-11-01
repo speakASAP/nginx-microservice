@@ -85,6 +85,8 @@ Each service needs a registry file: `/nginx-microservice/service-registry/{servi
     }
   },
   "shared_services": ["postgres", "redis"],
+  "infrastructure_compose_file": "docker-compose.infrastructure.yml",
+  "infrastructure_project_name": "crypto_ai_agent_infrastructure",
   "network": "nginx-network"
 }
 ```
@@ -104,6 +106,9 @@ Each service needs a registry file: `/nginx-microservice/service-registry/{servi
   - `health_timeout`: Timeout in seconds for health checks
   - `health_retries`: Number of retry attempts
   - `startup_time`: Seconds to wait after container start before health checks
+- `shared_services`: List of services that are managed as shared infrastructure (postgres, redis)
+- `infrastructure_compose_file`: Docker compose file for shared infrastructure (default: `docker-compose.infrastructure.yml`)
+- `infrastructure_project_name`: Docker compose project name for infrastructure containers
 
 ## State Management
 
@@ -221,6 +226,49 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 
 **When to use**: Manual cleanup or automatically after successful deployment
 
+### `ensure-infrastructure.sh` - Ensure Shared Infrastructure Running
+
+**Usage**: `./scripts/blue-green/ensure-infrastructure.sh <service_name>`
+
+**What it does**:
+
+1. Checks if shared infrastructure (postgres, redis) is running
+2. Starts infrastructure if not running
+3. Waits for health checks
+4. Exits with error if infrastructure fails
+
+**When to use**: Automatically called by deployment scripts, or manually to verify infrastructure
+
+**Note**: This script ensures database and Redis are always available before blue/green deployments, preventing data corruption from multiple instances.
+
+## Shared Infrastructure Architecture
+
+### Why Separate Infrastructure?
+
+Database (PostgreSQL) and Redis are managed as **shared infrastructure** (singleton services) rather than being part of blue/green deployments. This ensures:
+
+- ✅ **Zero Data Loss**: Only one database instance prevents data corruption
+- ✅ **Always Online**: Database survives blue/green container restarts
+- ✅ **No Conflicts**: No volume conflicts during deployments
+- ✅ **Zero Fault Tolerance**: Database automatically restarts on failure
+
+### Infrastructure Management
+
+**Manual Start:**
+
+```bash
+cd /path/to/service
+docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastructure up -d
+```
+
+**Automatic Management:**
+
+- Infrastructure is automatically checked before each deployment
+- If not running, it will be started automatically
+- Uses `restart: always` policy for automatic recovery
+
+**Important**: Infrastructure containers are **never stopped** during blue/green deployments. Only application containers (backend, frontend) are managed by blue/green.
+
 ## Deployment Workflow
 
 ### Standard Deployment Flow
@@ -228,8 +276,14 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 ```text
 1. deploy.sh called
    ↓
+0. ensure-infrastructure.sh (NEW)
+   - Check shared infrastructure (postgres, redis)
+   - Start if not running
+   - Wait for health checks
+   ↓
 2. prepare-green.sh
-   - Build green containers
+   - Ensure infrastructure is running
+   - Build green containers (backend, frontend only)
    - Start green containers
    - Health checks
    ↓
@@ -243,6 +297,7 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
    ↓
 5. cleanup.sh (if healthy)
    - Remove old blue containers
+   - Infrastructure stays running (never stopped)
 ```
 
 ### Rollback Flow

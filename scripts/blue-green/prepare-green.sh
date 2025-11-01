@@ -43,6 +43,14 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Starting preparation of $PREPARE_COLOR deployment"
 
+# Ensure shared infrastructure is running
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Ensuring shared infrastructure is running"
+
+if ! "${SCRIPT_DIR}/ensure-infrastructure.sh" "$SERVICE_NAME"; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Infrastructure check failed"
+    exit 1
+fi
+
 # Check docker compose
 if ! check_docker_compose_available; then
     exit 1

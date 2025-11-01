@@ -43,6 +43,10 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Cleaning up inactive $INACTIVE_COLOR deployment"
 
+# IMPORTANT: Infrastructure containers (postgres, redis) must NOT be stopped
+# They are managed separately via docker-compose.infrastructure.yml
+log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Note: Infrastructure containers will NOT be stopped (managed separately)"
+
 # Navigate to service directory
 cd "$ACTUAL_PATH"
 

@@ -26,6 +26,16 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Service validated in registry"
 
+# Phase 0: Ensure shared infrastructure is running
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 0: Ensuring shared infrastructure is running"
+
+if ! "${SCRIPT_DIR}/ensure-infrastructure.sh" "$SERVICE_NAME"; then
+    log_message "ERROR" "$SERVICE_NAME" "deploy" "deploy" "Phase 0 failed: Infrastructure check failed"
+    exit 1
+fi
+
+log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 0 completed: Infrastructure is ready"
+
 # Phase 1: Prepare green
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 1: Preparing green deployment"
 

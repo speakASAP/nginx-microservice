@@ -1,19 +1,23 @@
 {
   "service_name": "crypto-ai-agent",
-  "active_color": "blue",
+  "active_color": "green",
   "blue": {
-    "status": "running",
-    "deployed_at": null,
-    "version": null
-  },
-  "green": {
     "status": "stopped",
     "deployed_at": null,
     "version": null
   },
+  "green": {
+    "status": "running",
+    "deployed_at": null,
+    "version": null
+  },
   "last_deployment": {
-    "color": "blue",
-    "timestamp": null,
+    "color": "green",
+    "timestamp": "2025-11-01T14:14:33Z",
     "success": true
+  },
+  "": {
+    "status": "backup",
+    "deployed_at": "2025-11-01T14:14:31Z"
   }
 }
