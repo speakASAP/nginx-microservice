@@ -1,0 +1,19 @@
+{
+  "service_name": "crypto-ai-agent",
+  "active_color": "blue",
+  "blue": {
+    "status": "running",
+    "deployed_at": null,
+    "version": null
+  },
+  "green": {
+    "status": "stopped",
+    "deployed_at": null,
+    "version": null
+  },
+  "last_deployment": {
+    "color": "blue",
+    "timestamp": null,
+    "success": true
+  }
+}

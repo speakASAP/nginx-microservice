@@ -1,0 +1,29 @@
+{
+  "service_name": "crypto-ai-agent",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/crypto-ai-agent",
+  "production_path": "/home/statex/crypto-ai-agent",
+  "domain": "crypto-ai-agent.statex.cz",
+  "docker_compose_file": "docker-compose.yml",
+  "docker_project_base": "crypto_ai_agent",
+  "services": {
+    "backend": {
+      "container_name_base": "crypto-ai-backend",
+      "port": 8100,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
+    },
+    "frontend": {
+      "container_name_base": "crypto-ai-frontend",
+      "port": 3100,
+      "health_endpoint": "/",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 40
+    }
+  },
+  "shared_services": ["postgres", "redis"],
+  "network": "nginx-network"
+}
+

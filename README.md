@@ -5,6 +5,7 @@ A centralized reverse proxy microservice for managing multiple domains and subdo
 ## Migration Note
 
 **✅ Migration Complete** (October 31, 2024): SSL certificates and Let's Encrypt data have been migrated from `statex-infrastructure` to this nginx-microservice. The `certificates/` directory now contains:
+
 - Let's Encrypt certificates from `statex-infrastructure/letsencrypt/`
 - Let's Encrypt account data from `statex-infrastructure/letsencrypt-persistent/`
 - Webroot content from `statex-infrastructure/webroot/`
@@ -23,7 +24,7 @@ All SSL management is now centralized in this microservice.
 
 ## Architecture
 
-```
+```text
 nginx-microservice/
 ├── nginx/              # Nginx configuration and Dockerfile
 ├── certbot/            # Certbot scripts for certificate management
@@ -71,6 +72,7 @@ docker compose up -d
 ```
 
 **Examples:**
+
 ```bash
 # Basic usage
 ./scripts/add-domain.sh example.com my-app
@@ -92,6 +94,7 @@ docker compose up -d
 ```
 
 **Examples:**
+
 ```bash
 # Remove domain config only
 ./scripts/remove-domain.sh example.com
@@ -143,6 +146,7 @@ LOG_LEVEL=info                   # Logging level
 Domain configurations are stored in `nginx/conf.d/` directory. Each domain has its own `.conf` file.
 
 The configuration template (`nginx/templates/domain.conf.template`) includes:
+
 - HTTP to HTTPS redirect
 - SSL/TLS configuration
 - Security headers
@@ -156,6 +160,7 @@ The configuration template (`nginx/templates/domain.conf.template`) includes:
 3. **Port Exposure**: Containers must expose ports internally on the network
 
 **Example docker-compose.yml for your application:**
+
 ```yaml
 services:
   my-app:
@@ -167,6 +172,7 @@ services:
 ```
 
 **Connect existing container to network:**
+
 ```bash
 docker network connect nginx-network <container-name>
 ```
@@ -176,6 +182,7 @@ docker network connect nginx-network <container-name>
 ### Certificate Storage
 
 Certificates are stored in two locations:
+
 1. **Host filesystem**: `certificates/<domain>/` (primary storage)
 2. **Docker volume**: `/etc/letsencrypt/live/<domain>/` (for certbot access)
 
@@ -190,6 +197,7 @@ Certificates are stored in two locations:
 ### Certificate Renewal
 
 Certificates are automatically renewed:
+
 - **Systemd**: Daily check via timer
 - **Cron**: Daily at 3:00 AM
 - **Manual**: Run `docker compose run --rm certbot /scripts/renew-cert.sh`
@@ -271,6 +279,7 @@ cat logs/certbot/renewal.log
 ### Testing with Staging Certificates
 
 Set in `.env`:
+
 ```bash
 CERTBOT_STAGING=true
 ```
@@ -295,7 +304,52 @@ Copyright (c) 2025 Sergej
 
 See [LICENSE](LICENSE) file for details.
 
+## Blue/Green Deployment
+
+The nginx-microservice includes a zero-downtime blue/green deployment system for services.
+
+### Quick Start
+
+```bash
+# Deploy a service (full cycle)
+./scripts/blue-green/deploy.sh crypto-ai-agent
+
+# Manual rollback if needed
+./scripts/blue-green/rollback.sh crypto-ai-agent
+
+# Check deployment status
+cat state/crypto-ai-agent.json | jq .
+```
+
+### Features
+
+- ✅ **Zero-downtime deployments**: Switch traffic with < 2 seconds downtime
+- ✅ **Automatic rollback**: Auto-rollback on health check failure
+- ✅ **Health monitoring**: Continuous health checks during deployment
+- ✅ **Centralized management**: All deployments managed from one place
+- ✅ **Service registry**: Easy service configuration via JSON
+
+### Documentation
+
+For detailed documentation, see:
+
+- **[Blue/Green Deployment Guide](docs/BLUE_GREEN_DEPLOYMENT.md)** - Complete usage guide
+- **[Service Registry Format](docs/BLUE_GREEN_DEPLOYMENT.md#service-registry-format)** - How to configure services
+- **[Troubleshooting](docs/BLUE_GREEN_DEPLOYMENT.md#troubleshooting)** - Common issues and solutions
+
+### Available Scripts
+
+All scripts are in `scripts/blue-green/`:
+
+- `deploy.sh` - Full deployment cycle
+- `prepare-green.sh` - Build and start new deployment
+- `switch-traffic.sh` - Switch traffic to new color
+- `health-check.sh` - Check service health
+- `rollback.sh` - Rollback to previous deployment
+- `cleanup.sh` - Remove old deployment
+
+See [Blue/Green Deployment Guide](docs/BLUE_GREEN_DEPLOYMENT.md) for detailed usage.
+
 ## Support
 
 For issues and questions, please open an issue on GitHub.
-
