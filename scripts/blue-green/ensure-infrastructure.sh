@@ -40,12 +40,29 @@ INFRASTRUCTURE_PROJECT="crypto_ai_agent_infrastructure"
 
 # Check if infrastructure compose file exists
 if [ ! -f "$INFRASTRUCTURE_COMPOSE" ]; then
-    print_error "Infrastructure compose file not found: $INFRASTRUCTURE_COMPOSE"
-    print_error "Shared infrastructure (postgres, redis) must be managed separately"
-    exit 1
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Infrastructure compose file not found, checking for shared database-server"
+    
+    # Check for shared database-server (db-server-postgres, db-server-redis)
+    if docker ps --format "{{.Names}}" | grep -q "^db-server-postgres$"; then
+        log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Using shared database-server (db-server-postgres)"
+        POSTGRES_RUNNING=true
+        REDIS_RUNNING=$(docker ps --format "{{.Names}}" | grep -q "^db-server-redis$" && echo true || echo false)
+        if [ "$REDIS_RUNNING" = "false" ]; then
+            log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is not running"
+        else
+            log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is running"
+        fi
+        log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Shared infrastructure is available"
+        exit 0
+    else
+        print_error "Infrastructure compose file not found: $INFRASTRUCTURE_COMPOSE"
+        print_error "And shared database-server is not running"
+        print_error "Either start database-server or ensure docker-compose.infrastructure.yml exists"
+        exit 1
+    fi
 fi
 
-# Check if postgres container is running
+# Check if postgres container is running (service-specific infrastructure)
 if docker ps --format "{{.Names}}" | grep -q "^crypto-ai-postgres$"; then
     log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "PostgreSQL container is running"
     POSTGRES_RUNNING=true
@@ -54,7 +71,7 @@ else
     POSTGRES_RUNNING=false
 fi
 
-# Check if redis container is running
+# Check if redis container is running (service-specific infrastructure)
 if docker ps --format "{{.Names}}" | grep -q "^crypto-ai-redis$"; then
     log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Redis container is running"
     REDIS_RUNNING=true

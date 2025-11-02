@@ -202,9 +202,32 @@ update_nginx_upstream() {
     # Backup original config
     cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
     
+    # Check if containers exist (for inactive color - we need at least backup upstream)
+    local blue_frontend_exists=false
+    local blue_backend_exists=false
+    local green_frontend_exists=false
+    local green_backend_exists=false
+    
+    if docker ps --format "{{.Names}}" | grep -q "^${frontend_base}-blue$"; then
+        blue_frontend_exists=true
+    fi
+    if docker ps --format "{{.Names}}" | grep -q "^${backend_base}-blue$"; then
+        blue_backend_exists=true
+    fi
+    if docker ps --format "{{.Names}}" | grep -q "^${frontend_base}-green$"; then
+        green_frontend_exists=true
+    fi
+    if docker ps --format "{{.Names}}" | grep -q "^${backend_base}-green$"; then
+        green_backend_exists=true
+    fi
+    
     # Determine weights and backup status
     local blue_weight frontend_blue_backup backend_blue_backup
     local green_weight frontend_green_backup backend_green_backup
+    local frontend_blue_enabled=true
+    local frontend_green_enabled=true
+    local backend_blue_enabled=true
+    local backend_green_enabled=true
     
     if [ "$active_color" = "blue" ]; then
         blue_weight=100
@@ -213,6 +236,14 @@ update_nginx_upstream() {
         backend_blue_backup=""
         frontend_green_backup=" backup"
         backend_green_backup=" backup"
+        
+        # Disable inactive if containers don't exist
+        if [ "$green_frontend_exists" = "false" ]; then
+            frontend_green_enabled=false
+        fi
+        if [ "$green_backend_exists" = "false" ]; then
+            backend_green_enabled=false
+        fi
     else
         blue_weight=""  # No weight means backup server (nginx default)
         green_weight=100
@@ -220,6 +251,14 @@ update_nginx_upstream() {
         backend_blue_backup=" backup"
         frontend_green_backup=""
         backend_green_backup=""
+        
+        # Disable inactive if containers don't exist
+        if [ "$blue_frontend_exists" = "false" ]; then
+            frontend_blue_enabled=false
+        fi
+        if [ "$blue_backend_exists" = "false" ]; then
+            backend_blue_enabled=false
+        fi
     fi
     
     # Detect sed in-place edit flag (different for BSD/macOS vs GNU/Linux)
@@ -232,50 +271,78 @@ update_nginx_upstream() {
     fi
     
     # Update frontend upstream blocks
+    # First, uncomment any commented lines
+    $SED_IN_PLACE -e "s|^[[:space:]]*# server ${frontend_base}-blue|    server ${frontend_base}-blue|g" "$config_file"
+    $SED_IN_PLACE -e "s|^[[:space:]]*# server ${frontend_base}-green|    server ${frontend_base}-green|g" "$config_file"
+    
     # Pattern: server crypto-ai-frontend-blue:3100 [weight=100] [backup] max_fails=3 fail_timeout=30s;
-    if [ -n "$blue_weight" ]; then
-        # Blue has weight, update it
-        $SED_IN_PLACE \
-            -e "s|server ${frontend_base}-blue:${frontend_port}[^;]*|server ${frontend_base}-blue:${frontend_port} weight=${blue_weight}${frontend_blue_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+    if [ "$frontend_blue_enabled" = "true" ]; then
+        if [ -n "$blue_weight" ]; then
+            # Blue has weight, update it
+            $SED_IN_PLACE \
+                -e "s|server ${frontend_base}-blue:${frontend_port}[^;]*|server ${frontend_base}-blue:${frontend_port} weight=${blue_weight}${frontend_blue_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        else
+            # Blue is backup, remove weight
+            $SED_IN_PLACE \
+                -e "s|server ${frontend_base}-blue:${frontend_port}[^;]*|server ${frontend_base}-blue:${frontend_port}${frontend_blue_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        fi
     else
-        # Blue is backup, remove weight
-        $SED_IN_PLACE \
-            -e "s|server ${frontend_base}-blue:${frontend_port}[^;]*|server ${frontend_base}-blue:${frontend_port}${frontend_blue_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+        # Comment out blue if container doesn't exist
+        $SED_IN_PLACE -e "s|^[[:space:]]*server ${frontend_base}-blue|    # server ${frontend_base}-blue|g" "$config_file"
     fi
     
-    if [ -n "$green_weight" ]; then
-        # Green has weight, update it
-        $SED_IN_PLACE \
-            -e "s|server ${frontend_base}-green:${frontend_port}[^;]*|server ${frontend_base}-green:${frontend_port} weight=${green_weight}${frontend_green_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+    if [ "$frontend_green_enabled" = "true" ]; then
+        if [ -n "$green_weight" ]; then
+            # Green has weight, update it
+            $SED_IN_PLACE \
+                -e "s|server ${frontend_base}-green:${frontend_port}[^;]*|server ${frontend_base}-green:${frontend_port} weight=${green_weight}${frontend_green_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        else
+            # Green is backup, remove weight
+            $SED_IN_PLACE \
+                -e "s|server ${frontend_base}-green:${frontend_port}[^;]*|server ${frontend_base}-green:${frontend_port}${frontend_green_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        fi
     else
-        # Green is backup, remove weight
-        $SED_IN_PLACE \
-            -e "s|server ${frontend_base}-green:${frontend_port}[^;]*|server ${frontend_base}-green:${frontend_port}${frontend_green_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+        # Comment out green if container doesn't exist
+        $SED_IN_PLACE -e "s|^[[:space:]]*server ${frontend_base}-green|    # server ${frontend_base}-green|g" "$config_file"
     fi
     
     # Update backend upstream blocks
-    if [ -n "$blue_weight" ]; then
-        $SED_IN_PLACE \
-            -e "s|server ${backend_base}-blue:${backend_port}[^;]*|server ${backend_base}-blue:${backend_port} weight=${blue_weight}${backend_blue_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+    # First, uncomment any commented lines
+    $SED_IN_PLACE -e "s|^[[:space:]]*# server ${backend_base}-blue|    server ${backend_base}-blue|g" "$config_file"
+    $SED_IN_PLACE -e "s|^[[:space:]]*# server ${backend_base}-green|    server ${backend_base}-green|g" "$config_file"
+    
+    if [ "$backend_blue_enabled" = "true" ]; then
+        if [ -n "$blue_weight" ]; then
+            $SED_IN_PLACE \
+                -e "s|server ${backend_base}-blue:${backend_port}[^;]*|server ${backend_base}-blue:${backend_port} weight=${blue_weight}${backend_blue_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        else
+            $SED_IN_PLACE \
+                -e "s|server ${backend_base}-blue:${backend_port}[^;]*|server ${backend_base}-blue:${backend_port}${backend_blue_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        fi
     else
-        $SED_IN_PLACE \
-            -e "s|server ${backend_base}-blue:${backend_port}[^;]*|server ${backend_base}-blue:${backend_port}${backend_blue_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+        # Comment out blue if container doesn't exist
+        $SED_IN_PLACE -e "s|^[[:space:]]*server ${backend_base}-blue|    # server ${backend_base}-blue|g" "$config_file"
     fi
     
-    if [ -n "$green_weight" ]; then
-        $SED_IN_PLACE \
-            -e "s|server ${backend_base}-green:${backend_port}[^;]*|server ${backend_base}-green:${backend_port} weight=${green_weight}${backend_green_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+    if [ "$backend_green_enabled" = "true" ]; then
+        if [ -n "$green_weight" ]; then
+            $SED_IN_PLACE \
+                -e "s|server ${backend_base}-green:${backend_port}[^;]*|server ${backend_base}-green:${backend_port} weight=${green_weight}${backend_green_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        else
+            $SED_IN_PLACE \
+                -e "s|server ${backend_base}-green:${backend_port}[^;]*|server ${backend_base}-green:${backend_port}${backend_green_backup} max_fails=3 fail_timeout=30s|g" \
+                "$config_file"
+        fi
     else
-        $SED_IN_PLACE \
-            -e "s|server ${backend_base}-green:${backend_port}[^;]*|server ${backend_base}-green:${backend_port}${backend_green_backup} max_fails=3 fail_timeout=30s|g" \
-            "$config_file"
+        # Comment out green if container doesn't exist
+        $SED_IN_PLACE -e "s|^[[:space:]]*server ${backend_base}-green|    # server ${backend_base}-green|g" "$config_file"
     fi
 }
 

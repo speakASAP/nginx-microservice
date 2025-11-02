@@ -19,9 +19,12 @@ The blue/green deployment system consists of:
 - Docker and docker compose installed
 - Nginx microservice running
 - Service registered in `/nginx-microservice/service-registry/`
-- Service has blue/green docker-compose files
-- Service has health check endpoints configured
+- Service has blue/green docker-compose files (`docker-compose.blue.yml`, `docker-compose.green.yml`)
+- Service has health check endpoints configured (`/health` for backend, `/` for frontend)
 - `jq` installed: `brew install jq` (macOS) or `apt-get install jq` (Linux)
+- **Infrastructure**: Either:
+  - Shared `database-server` running (recommended), OR
+  - Service-specific `docker-compose.infrastructure.yml` file exists
 
 ## Quick Start
 
@@ -252,9 +255,73 @@ Database (PostgreSQL) and Redis are managed as **shared infrastructure** (single
 - ✅ **No Conflicts**: No volume conflicts during deployments
 - ✅ **Zero Fault Tolerance**: Database automatically restarts on failure
 
+### Infrastructure Models
+
+The deployment system supports **two infrastructure models**:
+
+#### Model 1: Shared Database-Server (Recommended for Production)
+
+**Container Names:**
+- PostgreSQL: `db-server-postgres`
+- Redis: `db-server-redis`
+
+**Setup:**
+```bash
+# Start shared database-server
+cd /path/to/database-server
+./scripts/start.sh
+
+# Verify running
+./scripts/status.sh
+```
+
+**Advantages:**
+- Centralized database management
+- Single source of truth
+- Easier backup/restore
+- Multiple services can share
+
+**Automatic Detection:**
+The `ensure-infrastructure.sh` script automatically detects `db-server-postgres` and uses it if available.
+
+#### Model 2: Service-Specific Infrastructure
+
+**Container Names:**
+- PostgreSQL: `{service}-postgres` (e.g., `crypto-ai-postgres`)
+- Redis: `{service}-redis` (e.g., `crypto-ai-redis`)
+
+**Setup:**
+```bash
+cd /path/to/service
+docker compose -f docker-compose.infrastructure.yml -p {service}_infrastructure up -d
+```
+
+**Advantages:**
+- Isolated infrastructure per service
+- Good for development/testing
+- Service-specific configurations
+
+**Requirement:**
+Must have `docker-compose.infrastructure.yml` in service directory.
+
 ### Infrastructure Management
 
-**Manual Start:**
+**Automatic Detection Flow:**
+
+1. **First Check**: Script looks for `docker-compose.infrastructure.yml` in service directory
+2. **If Found**: Starts/stops service-specific infrastructure
+3. **If Not Found**: Checks for shared `db-server-postgres` container
+4. **If Found**: Uses shared infrastructure (exits successfully)
+5. **If Neither**: Reports error with helpful message
+
+**Manual Start (Shared Database-Server):**
+
+```bash
+cd /path/to/database-server
+./scripts/start.sh
+```
+
+**Manual Start (Service-Specific):**
 
 ```bash
 cd /path/to/service
@@ -264,7 +331,8 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
 **Automatic Management:**
 
 - Infrastructure is automatically checked before each deployment
-- If not running, it will be started automatically
+- Shared infrastructure is detected and used if available
+- Service-specific infrastructure is started if not running
 - Uses `restart: always` policy for automatic recovery
 
 **Important**: Infrastructure containers are **never stopped** during blue/green deployments. Only application containers (backend, frontend) are managed by blue/green.
