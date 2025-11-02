@@ -10,7 +10,7 @@
 ERROR Infrastructure compose file not found: docker-compose.infrastructure.yml
 And shared database-server is not running
 Either start database-server or ensure docker-compose.infrastructure.yml exists
-```text
+```
 
 **Causes:**
 
@@ -20,7 +20,7 @@ Either start database-server or ensure docker-compose.infrastructure.yml exists
 
 **Solutions:**
 
-**Option A: Start Shared Database-Server (Recommended)**
+#### **Option A: Start Shared Database-Server (Recommended)**
 
 ```bash
 cd /path/to/database-server
@@ -29,24 +29,24 @@ cd /path/to/database-server
 # Verify it's running
 docker ps | grep db-server-postgres
 docker ps | grep db-server-redis
-```text
+```
 
-**Option B: Create Infrastructure File**
+#### **Option B: Create Infrastructure File**
 
 ```bash
 # Copy from local to production
 scp crypto-ai-agent/docker-compose.infrastructure.yml \
     statex:/home/statex/crypto-ai-agent/
-```text
+```
 
-**Option C: Verify Container Names**
+#### **Option C: Verify Container Names**
 
 ```bash
 # Check if containers exist with different names
 docker ps --format "{{.Names}}" | grep -E "postgres|redis"
 
 # Update ensure-infrastructure.sh if names differ
-```text
+```
 
 ---
 
@@ -57,7 +57,7 @@ docker ps --format "{{.Names}}" | grep -E "postgres|redis"
 ```text
 nginx: [emerg] host not found in upstream "crypto-ai-frontend-green:3100"
 nginx: configuration file /etc/nginx/nginx.conf test failed
-```text
+```
 
 **Causes:**
 
@@ -67,16 +67,16 @@ nginx: configuration file /etc/nginx/nginx.conf test failed
 
 **Solutions:**
 
-**A. Fix Using Switch-Traffic Script (Recommended)**
+#### **A. Fix Using Switch-Traffic Script (Recommended)**
 
 ```bash
 cd /path/to/nginx-microservice
 
 # This automatically comments out missing containers
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
-```text
+```
 
-**B. Manual Fix**
+#### **B. Manual Fix**
 
 ```bash
 # Edit nginx config to comment out missing upstreams
@@ -91,9 +91,9 @@ docker compose exec nginx nginx -t
 
 # Reload if test passes
 docker compose exec nginx nginx -s reload
-```text
+```
 
-**C. Verify Containers Exist**
+#### **C. Verify Containers Exist**
 
 ```bash
 # Check running containers
@@ -101,7 +101,7 @@ docker ps | grep crypto-ai
 
 # Check network connectivity
 docker network inspect nginx-network | grep crypto-ai
-```text
+```
 
 ---
 
@@ -111,7 +111,7 @@ docker network inspect nginx-network | grep crypto-ai
 
 ```text
 ERROR Health check failed, rollback already triggered
-```text
+```
 
 **What Happened:**
 
@@ -136,7 +136,7 @@ tail -f /path/to/nginx-microservice/logs/blue-green/deploy.log
 # 4. Check database connectivity
 docker exec crypto-ai-backend-green ping -c 2 db-server-postgres
 docker exec crypto-ai-backend-green env | grep DATABASE
-```text
+```
 
 **Common Causes:**
 
@@ -161,7 +161,7 @@ docker exec crypto-ai-backend-green env | grep DATABASE
 ```bash
 # Fix the issue, then retry deployment
 ./scripts/blue-green/deploy.sh crypto-ai-agent
-```text
+```
 
 ---
 
@@ -183,7 +183,7 @@ docker ps | grep crypto-ai
 
 # Compare with nginx config
 cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep upstream
-```text
+```
 
 **Fix:**
 
@@ -217,7 +217,7 @@ EOF
 
 # Then update nginx config
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
-```text
+```
 
 ---
 
@@ -249,7 +249,7 @@ docker compose logs nginx | tail -50
 
 # 6. Test SSL from server
 docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-agent.statex.cz'
-```text
+```
 
 **Common Causes:**
 
@@ -261,7 +261,7 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
    
    # Regenerate if needed
    ./scripts/add-domain.sh crypto-ai-agent.statex.cz
-   ```text
+   ```
 
 2. **Firewall Blocking Port 443**
 
@@ -272,7 +272,7 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
    
    # Open port if needed
    sudo ufw allow 443/tcp
-   ```text
+   ```
 
 3. **Nginx Config Error**
 
@@ -283,7 +283,7 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
    # Or manually test and reload
    docker compose exec nginx nginx -t
    docker compose exec nginx nginx -s reload
-   ```text
+   ```
 
 ---
 
@@ -306,7 +306,7 @@ cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 2 upstream
 
 # Verify switch-traffic script ran
 tail -20 logs/blue-green/deploy.log | grep switch
-```text
+```
 
 **Fix:**
 
@@ -319,7 +319,7 @@ cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep weight
 
 # Reload nginx
 docker compose exec nginx nginx -s reload
-```text
+```
 
 ---
 
@@ -329,7 +329,7 @@ docker compose exec nginx nginx -s reload
 
 ```text
 WARNING Phase 4 warning: cleanup.sh had issues, but deployment is successful
-```text
+```
 
 **What Happened:**
 
@@ -353,7 +353,7 @@ docker compose -f /path/to/crypto-ai-agent/docker-compose.blue.yml \
 # Or for green
 docker compose -f /path/to/crypto-ai-agent/docker-compose.green.yml \
     -p crypto_ai_agent_green down
-```text
+```
 
 **Note:** This is a warning, not an error. Deployment succeeded, just need manual cleanup.
 
@@ -381,7 +381,7 @@ tail -f logs/blue-green/deploy.log
 
 # Check for health check loops
 docker logs crypto-ai-backend-green | tail -50
-```text
+```
 
 **Common Causes:**
 
@@ -408,7 +408,7 @@ docker compose -f docker-compose.green.yml -p crypto_ai_agent_green down
 
 # Retry deployment
 ./scripts/blue-green/deploy.sh crypto-ai-agent
-```text
+```
 
 ---
 
@@ -428,7 +428,7 @@ cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 5 upstream
 
 # Network connectivity
 docker network inspect nginx-network | grep crypto-ai
-```text
+```
 
 ### Check Infrastructure
 
@@ -441,7 +441,7 @@ docker exec db-server-redis redis-cli ping
 # Or service-specific
 docker ps | grep crypto-ai-postgres
 docker ps | grep crypto-ai-redis
-```text
+```
 
 ### Check Logs
 
@@ -455,7 +455,7 @@ docker logs -f crypto-ai-frontend-green
 
 # Nginx logs
 docker compose logs nginx --tail 100 -f
-```text
+```
 
 ### Test Health Endpoints
 
@@ -467,7 +467,7 @@ curl http://crypto-ai-backend-green:8100/health
 # Frontend health
 curl http://crypto-ai-frontend-blue:3100/
 curl http://crypto-ai-frontend-green:3100/
-```text
+```
 
 ## Getting Help
 
@@ -484,20 +484,20 @@ curl http://crypto-ai-frontend-green:3100/
 
    ```bash
    ./scripts/blue-green/prepare-green.sh crypto-ai-agent
-   ```text
+   ```
 
 2. **Monitor During Deployment**
 
    ```bash
    tail -f logs/blue-green/deploy.log
-   ```text
+   ```
 
 3. **Verify Infrastructure Before Deploying**
 
    ```bash
    cd /path/to/database-server
    ./scripts/status.sh
-   ```text
+   ```
 
 4. **Keep State File Accurate**
    - Don't edit manually
