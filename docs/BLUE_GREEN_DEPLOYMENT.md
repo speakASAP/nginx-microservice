@@ -33,7 +33,7 @@ The blue/green deployment system consists of:
 ```bash
 cd /path/to/nginx-microservice
 ./scripts/blue-green/deploy.sh crypto-ai-agent
-```
+```text
 
 This will:
 
@@ -47,13 +47,13 @@ This will:
 
 ```bash
 ./scripts/blue-green/rollback.sh crypto-ai-agent
-```
+```text
 
 ### Check Deployment Status
 
 ```bash
 cat /nginx-microservice/state/crypto-ai-agent.json | jq .
-```
+```text
 
 ## Service Registry Format
 
@@ -92,7 +92,7 @@ Each service needs a registry file: `/nginx-microservice/service-registry/{servi
   "infrastructure_project_name": "crypto_ai_agent_infrastructure",
   "network": "nginx-network"
 }
-```
+```text
 
 ### Field Descriptions
 
@@ -139,7 +139,7 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
     "success": true
   }
 }
-```
+```text
 
 ### Status Values
 
@@ -166,7 +166,7 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 
 ```bash
 ./scripts/blue-green/deploy.sh crypto-ai-agent
-```
+```text
 
 ### `prepare-green.sh` - Prepare New Deployment
 
@@ -273,7 +273,7 @@ cd /path/to/database-server
 
 # Verify running
 ./scripts/status.sh
-```
+```text
 
 **Advantages:**
 - Centralized database management
@@ -294,7 +294,7 @@ The `ensure-infrastructure.sh` script automatically detects `db-server-postgres`
 ```bash
 cd /path/to/service
 docker compose -f docker-compose.infrastructure.yml -p {service}_infrastructure up -d
-```
+```text
 
 **Advantages:**
 - Isolated infrastructure per service
@@ -319,14 +319,14 @@ Must have `docker-compose.infrastructure.yml` in service directory.
 ```bash
 cd /path/to/database-server
 ./scripts/start.sh
-```
+```text
 
 **Manual Start (Service-Specific):**
 
 ```bash
 cd /path/to/service
 docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastructure up -d
-```
+```text
 
 **Automatic Management:**
 
@@ -366,7 +366,7 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
 5. cleanup.sh (if healthy)
    - Remove old blue containers
    - Infrastructure stays running (never stopped)
-```
+```text
 
 ### Rollback Flow
 
@@ -377,7 +377,7 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
    - Switch nginx back to blue
    - Stop green containers
    - Update state
-```
+```text
 
 ## Nginx Configuration
 
@@ -393,7 +393,7 @@ upstream crypto-ai-backend {
     server crypto-ai-backend-blue:8100 weight=100;
     server crypto-ai-backend-green:8100 weight=0 backup;
 }
-```
+```text
 
 When switching:
 
@@ -412,13 +412,13 @@ All deployment actions are logged to:
 [TIMESTAMP] [LEVEL] [SERVICE] [COLOR] [ACTION] [MESSAGE]
 2025-01-XX 10:30:15 INFO crypto-ai-agent green prepare Starting green deployment
 2025-01-XX 10:32:00 SUCCESS crypto-ai-agent green switch Traffic switched to green
-```
+```text
 
 ### View Logs
 
 ```bash
 tail -f /nginx-microservice/logs/blue-green/deploy.log
-```
+```text
 
 ## Troubleshooting
 
@@ -527,7 +527,7 @@ cat /nginx-microservice/state/crypto-ai-agent.json | jq .green.status
 
 # 5. Cleanup when ready
 ./scripts/blue-green/cleanup.sh crypto-ai-agent
-```
+```text
 
 ### Adding a New Service
 
