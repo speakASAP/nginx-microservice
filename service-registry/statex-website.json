@@ -1,0 +1,47 @@
+{
+  "service_name": "statex-website",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/statex/statex-website",
+  "production_path": "/home/statex/statex-website",
+  "domain": "statex.cz",
+  "docker_compose_file": "docker-compose.yml",
+  "docker_project_base": "statex_website",
+  "services": {
+    "frontend": {
+      "container_name_base": "statex-website-frontend",
+      "port": 3000,
+      "health_endpoint": "/",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 40
+    },
+    "submission-service": {
+      "container_name_base": "statex-website-submission-service",
+      "port": 8000,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
+    },
+    "user-portal": {
+      "container_name_base": "statex-website-user-portal",
+      "port": 8000,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
+    },
+    "content-service": {
+      "container_name_base": "statex-website-content-service",
+      "port": 8000,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
+    }
+  },
+  "shared_services": ["postgres", "redis"],
+  "infrastructure_compose_file": "docker-compose.infrastructure.yml",
+  "infrastructure_project_name": "statex_website_infrastructure",
+  "network": "nginx-network"
+}
+
