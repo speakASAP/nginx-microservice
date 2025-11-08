@@ -1,5 +1,5 @@
 {
-  "service_name": "statex-website",
+  "service_name": "statex",
   "active_color": "blue",
   "blue": {
     "status": "stopped",
