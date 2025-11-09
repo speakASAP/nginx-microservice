@@ -1,6 +1,6 @@
 {
   "service_name": "statex",
-  "service_path": "/Users/sergiystashok/Documents/GitHub/statex",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/statex/statex-website",
   "production_path": "/home/statex/statex",
   "domain": "statex.cz",
   "docker_compose_file": "docker-compose.blue.yml",
