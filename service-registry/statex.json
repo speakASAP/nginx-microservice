@@ -14,14 +14,6 @@
       "health_retries": 3,
       "startup_time": 40
     },
-    "backend": {
-      "container_name_base": "statex-submission-service",
-      "port": 8000,
-      "health_endpoint": "/health",
-      "health_timeout": 5,
-      "health_retries": 3,
-      "startup_time": 30
-    },
     "submission-service": {
       "container_name_base": "statex-submission-service",
       "port": 8000,
