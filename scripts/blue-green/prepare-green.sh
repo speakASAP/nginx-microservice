@@ -60,9 +60,19 @@ fi
 cd "$ACTUAL_PATH"
 
 # Determine docker compose file
-COMPOSE_FILE="docker-compose.${PREPARE_COLOR}.yml"
+# Extract base name from registry (e.g., "docker-compose.notification.blue.yml" -> "docker-compose.notification")
+REGISTRY_COMPOSE_FILE=$(echo "$REGISTRY" | jq -r '.docker_compose_file')
+if [ -z "$REGISTRY_COMPOSE_FILE" ] || [ "$REGISTRY_COMPOSE_FILE" = "null" ]; then
+    # Fallback: construct from service name
+    COMPOSE_FILE="docker-compose.${SERVICE_NAME}.${PREPARE_COLOR}.yml"
+else
+    # Replace .blue.yml or .green.yml with .${PREPARE_COLOR}.yml
+    COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${PREPARE_COLOR}\.yml/")
+fi
+
 if [ ! -f "$COMPOSE_FILE" ]; then
     print_error "Docker compose file not found: $COMPOSE_FILE"
+    print_error "Tried to find: $COMPOSE_FILE in $ACTUAL_PATH"
     exit 1
 fi
 
@@ -85,39 +95,55 @@ if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d; then
     exit 1
 fi
 
-# Get startup times from registry
-FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time')
-BACKEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.backend.startup_time')
-MAX_STARTUP=$((FRONTEND_STARTUP > BACKEND_STARTUP ? FRONTEND_STARTUP : BACKEND_STARTUP))
+# Get startup times from registry (handle services without frontend)
+FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time // empty')
+BACKEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.backend.startup_time // empty')
+if [ -z "$FRONTEND_STARTUP" ] && [ -z "$BACKEND_STARTUP" ]; then
+    print_error "No startup_time found in registry for frontend or backend"
+    exit 1
+fi
+if [ -z "$FRONTEND_STARTUP" ]; then
+    MAX_STARTUP=$BACKEND_STARTUP
+elif [ -z "$BACKEND_STARTUP" ]; then
+    MAX_STARTUP=$FRONTEND_STARTUP
+else
+    MAX_STARTUP=$((FRONTEND_STARTUP > BACKEND_STARTUP ? FRONTEND_STARTUP : BACKEND_STARTUP))
+fi
 
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Waiting ${MAX_STARTUP} seconds for services to start"
 
 # Wait for startup
 sleep "$MAX_STARTUP"
 
-# Get service info from registry
-FRONTEND_CONTAINER=$(echo "$REGISTRY" | jq -r ".services.frontend.container_name_base")-${PREPARE_COLOR}
-BACKEND_CONTAINER=$(echo "$REGISTRY" | jq -r ".services.backend.container_name_base")-${PREPARE_COLOR}
-FRONTEND_PORT=$(echo "$REGISTRY" | jq -r '.services.frontend.port')
-BACKEND_PORT=$(echo "$REGISTRY" | jq -r '.services.backend.port')
-FRONTEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.frontend.health_endpoint')
-BACKEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.backend.health_endpoint')
-FRONTEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.frontend.health_timeout')
-BACKEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.backend.health_timeout')
-FRONTEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.frontend.health_retries')
-BACKEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.backend.health_retries')
+# Get service info from registry (handle services without frontend)
+FRONTEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.frontend.container_name_base // empty')
+BACKEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.backend.container_name_base // empty')
+FRONTEND_PORT=$(echo "$REGISTRY" | jq -r '.services.frontend.port // empty')
+BACKEND_PORT=$(echo "$REGISTRY" | jq -r '.services.backend.port // empty')
+FRONTEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.frontend.health_endpoint // empty')
+BACKEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.backend.health_endpoint // empty')
+FRONTEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.frontend.health_timeout // empty')
+BACKEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.backend.health_timeout // empty')
+FRONTEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.frontend.health_retries // empty')
+BACKEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.backend.health_retries // empty')
 
-# Check if containers are running
-if ! docker ps | grep -q "$FRONTEND_CONTAINER"; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend container not running: $FRONTEND_CONTAINER"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
-    exit 1
+# Check if containers are running (only check if they exist in registry)
+if [ -n "$FRONTEND_CONTAINER" ]; then
+    FRONTEND_CONTAINER="${FRONTEND_CONTAINER}-${PREPARE_COLOR}"
+    if ! docker ps | grep -q "$FRONTEND_CONTAINER"; then
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend container not running: $FRONTEND_CONTAINER"
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
+        exit 1
+    fi
 fi
 
-if ! docker ps | grep -q "$BACKEND_CONTAINER"; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend container not running: $BACKEND_CONTAINER"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
-    exit 1
+if [ -n "$BACKEND_CONTAINER" ]; then
+    BACKEND_CONTAINER="${BACKEND_CONTAINER}-${PREPARE_COLOR}"
+    if ! docker ps | grep -q "$BACKEND_CONTAINER"; then
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend container not running: $BACKEND_CONTAINER"
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
+        exit 1
+    fi
 fi
 
 # Health check function
@@ -142,26 +168,30 @@ check_health() {
     return 1
 }
 
-# Check backend health
-log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking backend health: $BACKEND_CONTAINER:$BACKEND_PORT$BACKEND_HEALTH"
-
-if check_health "$BACKEND_CONTAINER" "$BACKEND_PORT" "$BACKEND_HEALTH" "$BACKEND_TIMEOUT" "$BACKEND_RETRIES"; then
-    log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend health check passed"
-else
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend health check failed after $BACKEND_RETRIES retries"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
-    exit 1
+# Check backend health (if exists)
+if [ -n "$BACKEND_CONTAINER" ] && [ -n "$BACKEND_PORT" ] && [ -n "$BACKEND_HEALTH" ]; then
+    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking backend health: $BACKEND_CONTAINER:$BACKEND_PORT$BACKEND_HEALTH"
+    
+    if check_health "$BACKEND_CONTAINER" "$BACKEND_PORT" "$BACKEND_HEALTH" "${BACKEND_TIMEOUT:-5}" "${BACKEND_RETRIES:-3}"; then
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend health check passed"
+    else
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Backend health check failed after ${BACKEND_RETRIES:-3} retries"
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
+        exit 1
+    fi
 fi
 
-# Check frontend health
-log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking frontend health: $FRONTEND_CONTAINER:$FRONTEND_PORT$FRONTEND_HEALTH"
-
-if check_health "$FRONTEND_CONTAINER" "$FRONTEND_PORT" "$FRONTEND_HEALTH" "$FRONTEND_TIMEOUT" "$FRONTEND_RETRIES"; then
-    log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend health check passed"
-else
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend health check failed after $FRONTEND_RETRIES retries"
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
-    exit 1
+# Check frontend health (if exists)
+if [ -n "$FRONTEND_CONTAINER" ] && [ -n "$FRONTEND_PORT" ] && [ -n "$FRONTEND_HEALTH" ]; then
+    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking frontend health: $FRONTEND_CONTAINER:$FRONTEND_PORT$FRONTEND_HEALTH"
+    
+    if check_health "$FRONTEND_CONTAINER" "$FRONTEND_PORT" "$FRONTEND_HEALTH" "${FRONTEND_TIMEOUT:-5}" "${FRONTEND_RETRIES:-3}"; then
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend health check passed"
+    else
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Frontend health check failed after ${FRONTEND_RETRIES:-3} retries"
+        docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down
+        exit 1
+    fi
 fi
 
 # Update state
@@ -173,4 +203,3 @@ save_state "$SERVICE_NAME" "$NEW_STATE"
 log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "$PREPARE_COLOR deployment prepared and healthy"
 
 exit 0
-
