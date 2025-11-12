@@ -14,7 +14,7 @@ This nginx microservice provides a centralized reverse proxy solution for managi
 
 ## Project Structure
 
-```
+```text
 nginx-microservice/
 ├── docker-compose.yml
 ├── .env.example
@@ -60,12 +60,14 @@ nginx-microservice/
 ## File Storage Strategy
 
 ### Host Filesystem Locations (on server)
+
 - Configs: `/home/statex/nginx-microservice/nginx/conf.d/`
 - Certificates: `/home/statex/nginx-microservice/certificates/`
 - Logs: `/home/statex/nginx-microservice/logs/`
 - Webroot: `/home/statex/nginx-microservice/webroot/`
 
 ### Docker Volume Mounts
+
 - Configs: Host `conf.d/` → Container `/etc/nginx/conf.d/`
 - Certificates: Host `certificates/` → Container `/etc/nginx/certs/`
 - Logs: Host `logs/` → Container `/var/log/nginx/` and `/var/log/certbot/`
@@ -74,6 +76,7 @@ nginx-microservice/
 ## Implementation Checklist
 
 ### Phase 1: Project Setup
+
 - [x] Create project directory structure
 - [ ] Initialize git repository
 - [ ] Create docker-compose.yml
@@ -81,6 +84,7 @@ nginx-microservice/
 - [ ] Create .gitignore
 
 ### Phase 2: Nginx Configuration
+
 - [ ] Create nginx/Dockerfile
 - [ ] Create nginx/nginx.conf (main config)
 - [ ] Create nginx/templates/domain.conf.template
@@ -88,12 +92,14 @@ nginx-microservice/
 - [ ] Create nginx/conf.d/crypto-ai-agent.statex.cz.conf
 
 ### Phase 3: Certbot Configuration
+
 - [ ] Create certbot/Dockerfile
 - [ ] Create certbot/scripts/request-cert.sh
 - [ ] Create certbot/scripts/check-cert-expiry.sh
 - [ ] Create certbot/scripts/renew-cert.sh
 
 ### Phase 4: Management Scripts
+
 - [ ] Create scripts/add-domain.sh
 - [ ] Create scripts/remove-domain.sh
 - [ ] Create scripts/list-domains.sh
@@ -101,15 +107,18 @@ nginx-microservice/
 - [ ] Create scripts/setup-cert-renewal.sh
 
 ### Phase 5: Certificate Renewal Automation
+
 - [ ] Create systemd timer/cron configuration
 - [ ] Test renewal process
 
 ### Phase 6: Documentation
+
 - [ ] Create README.md
 - [ ] Document usage examples
 - [ ] Create troubleshooting guide
 
 ### Phase 7: Testing
+
 - [ ] Test statex.cz configuration
 - [ ] Test crypto-ai-agent.statex.cz configuration
 - [ ] Test add-domain.sh script
@@ -123,6 +132,7 @@ nginx-microservice/
 ### DNS-Based Container Discovery
 
 Containers are discovered via Docker DNS using container names:
+
 - Format: `http://container-name:port`
 - Example: `http://statex.cz:3000`
 - Example: `http://crypto-ai-agent-frontend:3100`
@@ -153,6 +163,7 @@ All containers must be on the same Docker network (`nginx-network`).
 ### Domain Configuration Template
 
 Each domain config includes:
+
 - HTTP server block (port 80) → Redirect to HTTPS
 - HTTPS server block (port 443) with SSL
 - Proxy configuration using DNS-based container discovery
@@ -209,4 +220,3 @@ Each domain config includes:
 - Reload nginx: `./scripts/reload-nginx.sh`
 - Check certificates: `docker-compose run certbot check-cert-expiry.sh`
 - Manual renewal: `docker-compose run certbot renew-cert.sh`
-

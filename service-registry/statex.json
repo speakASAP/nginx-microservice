@@ -1,6 +1,6 @@
 {
   "service_name": "statex",
-  "service_path": "/Users/sergiystashok/Documents/GitHub/statex",
+  "service_path": "/home/statex/statex",
   "production_path": "/home/statex/statex",
   "domain": "statex.cz",
   "docker_compose_file": "docker-compose.blue.yml",
@@ -47,7 +47,10 @@
       "startup_time": 30
     }
   },
-  "shared_services": ["postgres", "redis"],
+  "shared_services": [
+    "postgres",
+    "redis"
+  ],
   "infrastructure_compose_file": "docker-compose.infrastructure.yml",
   "infrastructure_project_name": "statex_infrastructure",
   "network": "nginx-network"

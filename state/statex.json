@@ -1,20 +1,23 @@
 {
   "service_name": "statex",
-  "active_color": "blue",
+  "active_color": "green",
   "blue": {
     "status": "stopped",
     "deployed_at": null,
     "version": null
   },
   "green": {
-    "status": "stopped",
+    "status": "running",
     "deployed_at": null,
     "version": null
   },
   "last_deployment": {
-    "color": null,
-    "timestamp": null,
-    "success": false
+    "color": "green",
+    "timestamp": "2025-11-12T18:08:26Z",
+    "success": true
+  },
+  "": {
+    "status": "backup",
+    "deployed_at": "2025-11-12T18:08:25Z"
   }
 }
-

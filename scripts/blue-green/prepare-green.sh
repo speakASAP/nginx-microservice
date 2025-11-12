@@ -203,3 +203,4 @@ save_state "$SERVICE_NAME" "$NEW_STATE"
 log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "$PREPARE_COLOR deployment prepared and healthy"
 
 exit 0
+
