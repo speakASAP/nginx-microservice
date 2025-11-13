@@ -28,3 +28,7 @@ Thumbs.db
 *.tmp
 *.bak
 
+
+# State files (runtime deployment state - auto-generated)
+state/*.json
+!state/.gitkeep
