@@ -15,9 +15,5 @@
     "color": "green",
     "timestamp": "2025-11-12T18:08:26Z",
     "success": true
-  },
-  "": {
-    "status": "backup",
-    "deployed_at": "2025-11-12T18:08:25Z"
   }
 }
