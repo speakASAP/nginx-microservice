@@ -62,4 +62,3 @@ echo "   - Pull enabled: Yes"
 echo ""
 echo "💡 To pull latest changes:"
 echo "   cd $PROJECT_DIR && git pull origin main"
-
