@@ -179,30 +179,141 @@ docker network connect nginx-network <container-name>
 
 ## Certificate Management
 
-### Certificate Storage
+### Certificate Storage Architecture
 
-Certificates are stored in two locations:
+Certificates are stored in a three-tier system for reliability and persistence:
 
-1. **Host filesystem**: `certificates/<domain>/` (primary storage)
-2. **Docker volume**: `/etc/letsencrypt/live/<domain>/` (for certbot access)
+1. **Host filesystem** (Primary): `./certificates/<domain>/`
+   - This is the **primary storage location** on the host
+   - Files persist across container restarts and recreations
+   - Contains actual certificate files (not symlinks)
+
+2. **Certbot container**: `/etc/letsencrypt/live/<domain>/`
+   - Symlinks pointing to `/etc/letsencrypt/archive/<domain>/`
+   - Used by certbot for certificate management
+   - Volume mount: `./certificates` → `/etc/letsencrypt` in certbot container
+
+3. **Nginx container**: `/etc/nginx/certs/<domain>/`
+   - Read-only access to certificates for SSL configuration
+   - Volume mount: `./certificates` → `/etc/nginx/certs` in nginx container
+
+**Important**: The `request-cert.sh` script automatically copies certificates from certbot's location to the host filesystem (`./certificates/<domain>/`). This ensures:
+- Nginx can access certificates reliably
+- Certificates survive container restarts
+- Files are stored on persistent host storage
+
+### Certificate Files
+
+Each domain has two certificate files in `./certificates/<domain>/`:
+
+- **`fullchain.pem`**: Complete certificate chain
+  - Contains: Domain certificate + intermediate certificates
+  - Required for SSL/TLS handshake
+  - Permissions: `644` (readable by nginx)
+
+- **`privkey.pem`**: Private key
+  - Must be kept secure and never exposed
+  - Required for SSL/TLS encryption
+  - Permissions: `600` (only readable by owner)
 
 ### Certificate Request Flow
 
-1. Check if certificate exists locally
-2. Check expiration (request if < 30 days)
-3. Request via certbot with webroot validation
-4. Store in both locations
-5. Nginx automatically picks up new certificates
+When requesting a certificate (via `add-domain.sh` or manually):
+
+1. **Check existing certificate**: Script checks if certificate exists in `./certificates/<domain>/`
+2. **Validate expiration**: If certificate exists, checks if it expires in < 30 days
+3. **Request new certificate**: If needed, requests from Let's Encrypt using webroot validation
+   - Certbot places challenge file in `/var/www/html/.well-known/acme-challenge/`
+   - Nginx serves this file to prove domain ownership
+   - Let's Encrypt validates and issues certificate
+4. **Copy to host**: `request-cert.sh` copies certificate files to `./certificates/<domain>/`
+   - Uses `cp -L` to follow symlinks and copy actual files
+   - Sets proper file permissions (644 for fullchain, 600 for privkey)
+5. **Nginx configuration**: Update nginx config to reference:
+   ```nginx
+   ssl_certificate /etc/nginx/certs/<domain>/fullchain.pem;
+   ssl_certificate_key /etc/nginx/certs/<domain>/privkey.pem;
+   ```
+6. **Reload nginx**: Certificate is immediately available after nginx reload
 
 ### Certificate Renewal
 
-Certificates are automatically renewed:
+Let's Encrypt certificates are valid for **90 days**. Renewal should happen when < 30 days remain.
 
-- **Systemd**: Daily check via timer
-- **Cron**: Daily at 3:00 AM
-- **Manual**: Run `docker compose run --rm certbot /scripts/renew-cert.sh`
+**Automatic Renewal**:
+- **Systemd**: Daily check via timer (if configured)
+- **Cron**: Daily at 3:00 AM (if configured)
+- Renewal automatically triggers nginx reload
 
-Renewal triggers nginx reload automatically.
+**Manual Renewal**:
+```bash
+# Renew all certificates
+docker compose run --rm certbot /scripts/renew-cert.sh
+
+# Renew specific domain
+docker compose run --rm certbot /scripts/request-cert.sh <domain>
+```
+
+**Check Certificate Expiry**:
+```bash
+# Check specific domain
+docker compose run --rm certbot /scripts/check-cert-expiry.sh <domain>
+
+# Check certificate on host
+openssl x509 -enddate -noout -in certificates/<domain>/fullchain.pem
+```
+
+### Troubleshooting Certificate Issues
+
+#### Certificate Not Found in Nginx
+
+**Symptom**: `nginx: [emerg] cannot load certificate "/etc/nginx/certs/<domain>/fullchain.pem"`
+
+**Solution**:
+1. Verify certificate exists on host: `ls -la certificates/<domain>/`
+2. If missing, copy from certbot container:
+   ```bash
+   docker exec nginx-certbot sh -c 'mkdir -p /etc/letsencrypt/<domain> && cp -L /etc/letsencrypt/live/<domain>/fullchain.pem /etc/letsencrypt/<domain>/ && cp -L /etc/letsencrypt/live/<domain>/privkey.pem /etc/letsencrypt/<domain>/ && chmod 644 /etc/letsencrypt/<domain>/fullchain.pem && chmod 600 /etc/letsencrypt/<domain>/privkey.pem'
+   ```
+3. Verify nginx config references correct path: `/etc/nginx/certs/<domain>/fullchain.pem`
+
+#### Certificate Request Fails
+
+**Common causes**:
+- DNS not pointing to server: `dig <domain>` should return server IP
+- Port 80 not accessible: Let's Encrypt needs HTTP access for validation
+- Rate limiting: Let's Encrypt has rate limits (50 certs/week per domain)
+
+**Debug steps**:
+```bash
+# Check DNS
+dig <domain>
+
+# Test HTTP access
+curl http://<domain>/.well-known/acme-challenge/test
+
+# Check certbot logs
+docker compose logs certbot
+
+# Use staging environment for testing
+CERTBOT_STAGING=true docker compose run --rm certbot /scripts/request-cert.sh <domain>
+```
+
+#### Certificate Expired
+
+**Symptom**: Browser shows "Certificate has expired" error
+
+**Solution**:
+```bash
+# Renew certificate
+docker compose run --rm certbot /scripts/request-cert.sh <domain>
+
+# Verify new certificate
+openssl x509 -enddate -noout -in certificates/<domain>/fullchain.pem
+
+# Reload nginx
+docker compose exec nginx nginx -s reload
+```
 
 ## Logging
 

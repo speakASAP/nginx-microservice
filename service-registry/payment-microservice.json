@@ -1,0 +1,21 @@
+{
+  "service_name": "payment-microservice",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/payment-microservice",
+  "production_path": "/home/statex/payment-microservice",
+  "domain": "payments.statex.cz",
+  "docker_compose_file": "docker-compose.blue.yml",
+  "docker_project_base": "payment_microservice",
+  "services": {
+    "backend": {
+      "container_name_base": "payment-microservice",
+      "port": 3468,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 60
+    }
+  },
+  "shared_services": ["postgres"],
+  "network": "nginx-network"
+}
+

@@ -64,7 +64,20 @@ sed -e "s|{{DOMAIN_NAME}}|$DOMAIN|g" \
 
 echo "✅ Configuration file created: $CONFIG_FILE"
 
-# Check certificate
+# Certificate Management
+# Certificates are stored in ./certificates/<domain>/ on the host filesystem
+# This directory is mounted to:
+# - /etc/letsencrypt/ in certbot container (for certificate management)
+# - /etc/nginx/certs/ in nginx container (for SSL configuration)
+#
+# Certificate files:
+# - fullchain.pem: Certificate chain (domain cert + intermediate certs)
+# - privkey.pem: Private key (must be kept secure)
+#
+# IMPORTANT: After requesting a certificate, it's automatically copied to ./certificates/<domain>/
+# by the request-cert.sh script. The nginx config should reference:
+# ssl_certificate /etc/nginx/certs/<domain>/fullchain.pem;
+# ssl_certificate_key /etc/nginx/certs/<domain>/privkey.pem;
 echo ""
 echo "Checking certificate status..."
 CERT_DIR="${PROJECT_DIR}/certificates/${DOMAIN}"
@@ -75,6 +88,8 @@ if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
     echo "✅ Certificate found locally"
     
     # Check expiration
+    # Let's Encrypt certificates are valid for 90 days
+    # We check if renewal is needed (< 30 days remaining)
     EXPIRY_DATE=$(openssl x509 -enddate -noout -in "$FULLCHAIN" | cut -d= -f2)
     EXPIRY_EPOCH=$(date -d "$EXPIRY_DATE" +%s 2>/dev/null || date -j -f "%b %d %H:%M:%S %Y %Z" "$EXPIRY_DATE" +%s 2>/dev/null || echo "0")
     
@@ -84,17 +99,31 @@ if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
         
         if [ $DAYS_UNTIL_EXPIRY -lt 30 ]; then
             echo "⚠️  Certificate expires in ${DAYS_UNTIL_EXPIRY} days. Consider renewing."
+            echo "   Run: docker compose run --rm certbot /scripts/renew-cert.sh"
         fi
     fi
 else
     echo "⚠️  Certificate not found. Requesting new certificate..."
+    echo "   This will use Let's Encrypt webroot validation."
+    echo "   Make sure the domain DNS points to this server and port 80 is accessible."
     
     # Request certificate via certbot container
+    # The request-cert.sh script will:
+    # 1. Request certificate from Let's Encrypt
+    # 2. Validate domain ownership via webroot challenge
+    # 3. Copy certificate files to ./certificates/<domain>/ on host
+    # 4. Set proper file permissions
     if docker compose -f "${PROJECT_DIR}/docker-compose.yml" run --rm certbot /scripts/request-cert.sh "$DOMAIN" "$EMAIL"; then
         echo "✅ Certificate requested successfully"
+        echo "   Certificate location: ${CERT_DIR}/"
+        echo "   Update nginx config to use: /etc/nginx/certs/${DOMAIN}/fullchain.pem"
     else
         echo "⚠️  Certificate request failed. You can request it manually later."
         echo "   Run: docker compose run --rm certbot /scripts/request-cert.sh $DOMAIN $EMAIL"
+        echo "   Troubleshooting:"
+        echo "   - Check DNS: dig $DOMAIN"
+        echo "   - Check port 80: curl http://$DOMAIN/.well-known/acme-challenge/test"
+        echo "   - Check certbot logs: docker compose logs certbot"
     fi
 fi
 
