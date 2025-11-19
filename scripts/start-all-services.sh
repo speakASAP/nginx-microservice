@@ -467,7 +467,9 @@ if [ "$SKIP_MICROSERVICES" = false ]; then
             print_success "Microservice $service started successfully"
         else
             fail_count=$((fail_count + 1))
-            print_warning "Microservice $service ${RED_X} failed to start, continuing with next service..."
+            print_error "Microservice $service ${RED_X} failed to start"
+            print_error "Stopping startup process due to error"
+            exit 1
         fi
         
         # Small delay between services
@@ -507,7 +509,9 @@ if [ "$SKIP_APPLICATIONS" = false ]; then
             print_success "Application $service started successfully"
         else
             fail_count=$((fail_count + 1))
-            print_warning "Application $service ${RED_X} failed to start, continuing with next service..."
+            print_error "Application $service ${RED_X} failed to start"
+            print_error "Stopping startup process due to error"
+            exit 1
         fi
         
         # Small delay between services
