@@ -12,7 +12,7 @@
       "health_endpoint": "/health",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 30
+      "startup_time": 10
     },
     "frontend": {
       "container_name_base": "crypto-ai-frontend",
@@ -20,7 +20,7 @@
       "health_endpoint": "/",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 40
+      "startup_time": 10
     }
   },
   "shared_services": ["postgres", "redis"],
