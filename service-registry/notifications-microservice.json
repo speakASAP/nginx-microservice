@@ -15,8 +15,12 @@
       "startup_time": 30
     }
   },
-  "shared_services": ["postgres", "redis"],
+  "shared_services": [
+    "postgres",
+    "redis"
+  ],
   "infrastructure_compose_file": "docker-compose.infrastructure.yml",
   "infrastructure_project_name": "notifications_microservice_infrastructure",
-  "network": "nginx-network"
+  "network": "nginx-network",
+  "https_check_endpoint": "/health"
 }
