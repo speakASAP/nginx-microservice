@@ -1,5 +1,5 @@
 {
-  "service_name": "statex-notification",
+  "service_name": "notifications-microservice",
   "service_path": "/Users/sergiystashok/Documents/GitHub/statex",
   "production_path": "/home/statex/statex",
   "domain": "notifications.statex.cz",
@@ -7,7 +7,7 @@
   "docker_project_base": "statex_notification",
   "services": {
     "backend": {
-      "container_name_base": "statex-notification-service",
+      "container_name_base": "notifications-microservice",
       "port": 8005,
       "health_endpoint": "/health",
       "health_timeout": 5,

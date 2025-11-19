@@ -1,8 +1,6 @@
 #!/bin/bash
-# Main Deployment Script - Full blue/green deployment
-# DEPRECATED: Use deploy-smart.sh instead for better performance (only rebuilds changed services)
-# This script is kept for backward compatibility but will always rebuild all services
-# Usage: deploy.sh <service_name>
+# Smart Deployment Script - Uses smart prepare-green that only rebuilds changed services
+# Usage: deploy-smart.sh <service_name>
 
 set -e
 
@@ -12,17 +10,16 @@ source "${SCRIPT_DIR}/utils.sh"
 SERVICE_NAME="$1"
 
 if [ -z "$SERVICE_NAME" ]; then
-    print_error "Usage: deploy.sh <service_name>"
+    print_error "Usage: deploy-smart.sh <service_name>"
     exit 1
 fi
 
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Starting blue/green deployment"
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Starting smart blue/green deployment"
 
 # Validate service exists in registry
 REGISTRY_FILE="${REGISTRY_DIR}/${SERVICE_NAME}.json"
 if [ ! -f "$REGISTRY_FILE" ]; then
     print_error "Service not found in registry: $SERVICE_NAME"
-    print_error "Registry file not found: $REGISTRY_FILE"
     exit 1
 fi
 
@@ -38,11 +35,11 @@ fi
 
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 0 completed: Infrastructure is ready"
 
-# Phase 1: Prepare green
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 1: Preparing green deployment"
+# Phase 1: Prepare green (smart version)
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 1: Preparing green deployment (smart mode)"
 
-if ! "${SCRIPT_DIR}/prepare-green.sh" "$SERVICE_NAME"; then
-    log_message "ERROR" "$SERVICE_NAME" "deploy" "deploy" "Phase 1 failed: prepare-green.sh exited with error"
+if ! "${SCRIPT_DIR}/prepare-green-smart.sh" "$SERVICE_NAME"; then
+    log_message "ERROR" "$SERVICE_NAME" "deploy" "deploy" "Phase 1 failed: prepare-green-smart.sh exited with error"
     exit 1
 fi
 
@@ -63,11 +60,11 @@ log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 2 completed: Traf
 # Phase 3: Monitor health for 5 minutes
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 3: Monitoring health for 5 minutes"
 
-MONITOR_DURATION=300  # 5 minutes in seconds
-CHECK_INTERVAL=30     # Check every 30 seconds
+MONITOR_DURATION=300
+CHECK_INTERVAL=30
 ELAPSED=0
 HEALTHY_CHECKS=0
-REQUIRED_HEALTHY_CHECKS=10  # 5 minutes / 30 seconds = 10 checks
+REQUIRED_HEALTHY_CHECKS=10
 
 while [ $ELAPSED -lt $MONITOR_DURATION ]; do
     if "${SCRIPT_DIR}/health-check.sh" "$SERVICE_NAME"; then
@@ -97,9 +94,8 @@ log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 completed: Old 
 
 # Final success
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Blue/Green deployment completed successfully!"
+log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Smart blue/Green deployment completed successfully!"
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Active color: green"
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="
 
 exit 0
-

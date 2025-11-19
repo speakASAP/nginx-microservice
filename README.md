@@ -198,6 +198,7 @@ Certificates are stored in a three-tier system for reliability and persistence:
    - Volume mount: `./certificates` → `/etc/nginx/certs` in nginx container
 
 **Important**: The `request-cert.sh` script automatically copies certificates from certbot's location to the host filesystem (`./certificates/<domain>/`). This ensures:
+
 - Nginx can access certificates reliably
 - Certificates survive container restarts
 - Files are stored on persistent host storage
@@ -230,10 +231,12 @@ When requesting a certificate (via `add-domain.sh` or manually):
    - Uses `cp -L` to follow symlinks and copy actual files
    - Sets proper file permissions (644 for fullchain, 600 for privkey)
 5. **Nginx configuration**: Update nginx config to reference:
+
    ```nginx
    ssl_certificate /etc/nginx/certs/<domain>/fullchain.pem;
    ssl_certificate_key /etc/nginx/certs/<domain>/privkey.pem;
    ```
+
 6. **Reload nginx**: Certificate is immediately available after nginx reload
 
 ### Certificate Renewal
@@ -241,11 +244,13 @@ When requesting a certificate (via `add-domain.sh` or manually):
 Let's Encrypt certificates are valid for **90 days**. Renewal should happen when < 30 days remain.
 
 **Automatic Renewal**:
+
 - **Systemd**: Daily check via timer (if configured)
 - **Cron**: Daily at 3:00 AM (if configured)
 - Renewal automatically triggers nginx reload
 
 **Manual Renewal**:
+
 ```bash
 # Renew all certificates
 docker compose run --rm certbot /scripts/renew-cert.sh
@@ -255,6 +260,7 @@ docker compose run --rm certbot /scripts/request-cert.sh <domain>
 ```
 
 **Check Certificate Expiry**:
+
 ```bash
 # Check specific domain
 docker compose run --rm certbot /scripts/check-cert-expiry.sh <domain>
@@ -270,21 +276,26 @@ openssl x509 -enddate -noout -in certificates/<domain>/fullchain.pem
 **Symptom**: `nginx: [emerg] cannot load certificate "/etc/nginx/certs/<domain>/fullchain.pem"`
 
 **Solution**:
+
 1. Verify certificate exists on host: `ls -la certificates/<domain>/`
 2. If missing, copy from certbot container:
+
    ```bash
    docker exec nginx-certbot sh -c 'mkdir -p /etc/letsencrypt/<domain> && cp -L /etc/letsencrypt/live/<domain>/fullchain.pem /etc/letsencrypt/<domain>/ && cp -L /etc/letsencrypt/live/<domain>/privkey.pem /etc/letsencrypt/<domain>/ && chmod 644 /etc/letsencrypt/<domain>/fullchain.pem && chmod 600 /etc/letsencrypt/<domain>/privkey.pem'
    ```
+
 3. Verify nginx config references correct path: `/etc/nginx/certs/<domain>/fullchain.pem`
 
 #### Certificate Request Fails
 
 **Common causes**:
+
 - DNS not pointing to server: `dig <domain>` should return server IP
 - Port 80 not accessible: Let's Encrypt needs HTTP access for validation
 - Rate limiting: Let's Encrypt has rate limits (50 certs/week per domain)
 
 **Debug steps**:
+
 ```bash
 # Check DNS
 dig <domain>
@@ -304,6 +315,7 @@ CERTBOT_STAGING=true docker compose run --rm certbot /scripts/request-cert.sh <d
 **Symptom**: Browser shows "Certificate has expired" error
 
 **Solution**:
+
 ```bash
 # Renew certificate
 docker compose run --rm certbot /scripts/request-cert.sh <domain>
@@ -419,11 +431,54 @@ See [LICENSE](LICENSE) file for details.
 
 The nginx-microservice includes a zero-downtime blue/green deployment system for services.
 
-### Quick Start
+### Standardized Services
+
+All services are now standardized and managed through the blue/green deployment system:
+
+- **auth-microservice** - Authentication service
+- **crypto-ai-agent** - Crypto AI agent application
+- **database-server** - Database infrastructure (shared)
+- **e-commerce** - E-commerce platform (heavy application with 10+ internal services)
+- **logging-microservice** - Centralized logging service
+- **nginx-microservice** - This reverse proxy service
+- **notifications-microservice** - Notification service
+- **payment-microservice** - Payment processing service
+- **statex** - Main statex platform application
+
+### Service Dependencies and Startup Order
+
+All services have dependencies that must be respected when starting the system. See **[Service Dependencies Guide](docs/SERVICE_DEPENDENCIES.md)** for complete details.
+
+**Quick Start - All Services:**
 
 ```bash
-# Deploy a service (full cycle)
-./scripts/blue-green/deploy.sh crypto-ai-agent
+# Start all services in correct dependency order
+./scripts/start-all-services.sh
+
+# Start only infrastructure (nginx + database)
+./scripts/start-all-services.sh --skip-microservices --skip-applications
+
+# Start only microservices (assumes infrastructure is running)
+./scripts/start-all-services.sh --skip-infrastructure --skip-applications
+
+# Start only applications (assumes infrastructure and microservices are running)
+./scripts/start-all-services.sh --skip-infrastructure --skip-microservices
+```
+
+**Startup Order:**
+
+1. **Infrastructure**: nginx-microservice → database-server
+2. **Microservices**: logging-microservice → auth-microservice → payment-microservice → notifications-microservice → crypto-ai-agent
+3. **Applications**: statex-platform → statex-ai → statex → e-commerce
+
+### Services Quick Start
+
+```bash
+# Deploy a service (full cycle) - RECOMMENDED: Use deploy-smart.sh for better performance
+./scripts/blue-green/deploy-smart.sh crypto-ai-agent
+
+# For heavy applications (e-commerce with 10+ services), deploy-smart.sh only rebuilds changed services
+# This significantly speeds up deployment time
 
 # Manual rollback if needed
 ./scripts/blue-green/rollback.sh crypto-ai-agent
@@ -432,7 +487,7 @@ The nginx-microservice includes a zero-downtime blue/green deployment system for
 cat state/crypto-ai-agent.json | jq .
 ```
 
-### Features
+### Service Features
 
 - ✅ **Zero-downtime deployments**: Switch traffic with < 2 seconds downtime
 - ✅ **Automatic rollback**: Auto-rollback on health check failure
@@ -452,8 +507,10 @@ For detailed documentation, see:
 
 All scripts are in `scripts/blue-green/`:
 
-- `deploy.sh` - Full deployment cycle
-- `prepare-green.sh` - Build and start new deployment
+- `deploy-smart.sh` - **RECOMMENDED**: Full deployment cycle (only rebuilds changed services)
+- `prepare-green-smart.sh` - **RECOMMENDED**: Build and start new deployment (only rebuilds changed services)
+- `deploy.sh` - Full deployment cycle (DEPRECATED: always rebuilds all services, use deploy-smart.sh)
+- `prepare-green.sh` - Build and start new deployment (DEPRECATED: always rebuilds all services, use prepare-green-smart.sh)
 - `switch-traffic.sh` - Switch traffic to new color
 - `health-check.sh` - Check service health
 - `rollback.sh` - Rollback to previous deployment

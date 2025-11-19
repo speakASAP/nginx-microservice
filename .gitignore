@@ -28,6 +28,12 @@ Thumbs.db
 *.tmp
 *.bak
 
+# Backup and local override files (but allow actual config files)
+nginx/conf.d/*.backup
+nginx/conf.d/*.local
+nginx/conf.d/*.disabled
+service-registry/*.local
+
 
 # State files (runtime deployment state - auto-generated)
 state/*.json

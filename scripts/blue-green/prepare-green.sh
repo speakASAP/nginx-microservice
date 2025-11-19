@@ -1,5 +1,7 @@
 #!/bin/bash
 # Prepare Green - Build and start green instance
+# DEPRECATED: Use prepare-green-smart.sh instead (only rebuilds changed services)
+# This script is kept for backward compatibility but will always rebuild all services
 # Usage: prepare-green.sh <service_name>
 
 set -e

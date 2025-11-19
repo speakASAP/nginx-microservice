@@ -250,7 +250,9 @@ update_nginx_upstream() {
         fi
         
         # Update upstream block for this service
-        # First, uncomment any commented lines
+        # First, remove placeholder line if it exists (simple pattern match)
+        $SED_IN_PLACE -e "/server 127\.0\.0\.1:65535 down.*Placeholder/d" "$config_file"
+        # Uncomment any commented lines
         $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
         $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
         
