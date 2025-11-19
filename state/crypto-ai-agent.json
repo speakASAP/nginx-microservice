@@ -13,11 +13,11 @@
   },
   "last_deployment": {
     "color": "green",
-    "timestamp": "2025-11-01T14:14:33Z",
+    "timestamp": "2025-11-19T20:55:26Z",
     "success": true
   },
   "": {
     "status": "backup",
-    "deployed_at": "2025-11-01T14:14:31Z"
+    "deployed_at": "2025-11-19T20:55:24Z"
   }
 }
