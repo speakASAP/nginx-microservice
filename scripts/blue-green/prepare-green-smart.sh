@@ -275,17 +275,22 @@ if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d; then
     exit 1
 fi
 
-# Get startup times from registry
+# Get startup times from registry (capped at 5 seconds maximum)
 FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time // empty')
 BACKEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.backend.startup_time // empty')
 if [ -z "$FRONTEND_STARTUP" ] && [ -z "$BACKEND_STARTUP" ]; then
-    MAX_STARTUP=10
+    MAX_STARTUP=5
 elif [ -z "$FRONTEND_STARTUP" ]; then
     MAX_STARTUP=$BACKEND_STARTUP
 elif [ -z "$BACKEND_STARTUP" ]; then
     MAX_STARTUP=$FRONTEND_STARTUP
 else
     MAX_STARTUP=$((FRONTEND_STARTUP > BACKEND_STARTUP ? FRONTEND_STARTUP : BACKEND_STARTUP))
+fi
+
+# Cap maximum startup time at 5 seconds
+if [ "$MAX_STARTUP" -gt 5 ]; then
+    MAX_STARTUP=5
 fi
 
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Waiting ${MAX_STARTUP} seconds for services to start"
@@ -307,7 +312,7 @@ check_health() {
             return 0
         fi
         if [ $attempt -lt $retries ]; then
-            sleep 2
+            sleep 1
         fi
     done
     return 1

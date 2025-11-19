@@ -57,14 +57,14 @@ fi
 
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 2 completed: Traffic switched to green"
 
-# Phase 3: Monitor health for 5 minutes
+# Phase 3: Monitor health for 2 minutes
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 3: Monitoring health for 5 minutes"
 
-MONITOR_DURATION=300
-CHECK_INTERVAL=30
+MONITOR_DURATION=120  # 2 minutes in seconds
+CHECK_INTERVAL=30     # Check every 30 seconds
 ELAPSED=0
 HEALTHY_CHECKS=0
-REQUIRED_HEALTHY_CHECKS=10
+REQUIRED_HEALTHY_CHECKS=4  # 2 minutes / 30 seconds = 4 checks
 
 while [ $ELAPSED -lt $MONITOR_DURATION ]; do
     if "${SCRIPT_DIR}/health-check.sh" "$SERVICE_NAME"; then

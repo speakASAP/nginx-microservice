@@ -103,7 +103,7 @@ if [ "$POSTGRES_RUNNING" = false ] || [ "$REDIS_RUNNING" = false ]; then
             POSTGRES_HEALTHY=true
             break
         fi
-        sleep 2
+        sleep 1
     done
     
     if [ "$POSTGRES_HEALTHY" = false ]; then

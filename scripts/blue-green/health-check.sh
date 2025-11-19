@@ -52,7 +52,7 @@ check_health() {
             return 0
         fi
         if [ $attempt -lt $retries ]; then
-            sleep 2
+            sleep 1
         fi
     done
     return 1
