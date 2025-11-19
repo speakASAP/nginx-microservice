@@ -275,7 +275,7 @@ if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d; then
     exit 1
 fi
 
-# Get startup times from registry (capped at 5 seconds maximum)
+# Get startup times from registry
 FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time // empty')
 BACKEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.backend.startup_time // empty')
 if [ -z "$FRONTEND_STARTUP" ] && [ -z "$BACKEND_STARTUP" ]; then
@@ -288,8 +288,11 @@ else
     MAX_STARTUP=$((FRONTEND_STARTUP > BACKEND_STARTUP ? FRONTEND_STARTUP : BACKEND_STARTUP))
 fi
 
-# Cap maximum startup time at 5 seconds
-if [ "$MAX_STARTUP" -gt 5 ]; then
+# Ensure MAX_STARTUP is numeric and at least 5 seconds
+if ! [[ "$MAX_STARTUP" =~ ^[0-9]+$ ]]; then
+    MAX_STARTUP=5
+fi
+if [ "$MAX_STARTUP" -lt 5 ]; then
     MAX_STARTUP=5
 fi
 
