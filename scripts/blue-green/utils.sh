@@ -338,6 +338,9 @@ update_nginx_upstream() {
 # Function to test nginx config
 test_nginx_config() {
     local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
+    local max_wait=30
+    local wait_interval=1
+    local elapsed=0
     
     if [ ! -f "$nginx_compose_file" ]; then
         print_error "Nginx docker-compose.yml not found: $nginx_compose_file"
@@ -345,11 +348,46 @@ test_nginx_config() {
     fi
     
     cd "$NGINX_PROJECT_DIR"
-    if docker compose exec nginx nginx -t >/dev/null 2>&1; then
+    
+    # Wait for nginx container to be running (not restarting)
+    while [ $elapsed -lt $max_wait ]; do
+        local container_status=$(docker compose ps nginx --format "{{.Status}}" 2>/dev/null || echo "")
+        if echo "$container_status" | grep -qE "Up.*\(healthy\)|Up.*\(unhealthy\)"; then
+            # Container is running (healthy or unhealthy, but running)
+            break
+        elif echo "$container_status" | grep -qE "Restarting|Starting"; then
+            # Container is restarting or starting, wait
+            sleep $wait_interval
+            elapsed=$((elapsed + wait_interval))
+        else
+            # Container might not exist or be stopped
+            sleep $wait_interval
+            elapsed=$((elapsed + wait_interval))
+        fi
+    done
+    
+    # Additional check: ensure container is actually accessible
+    local retries=0
+    local max_retries=5
+    while [ $retries -lt $max_retries ]; do
+        if docker compose exec -T nginx echo >/dev/null 2>&1; then
+            break
+        fi
+        sleep 1
+        retries=$((retries + 1))
+    done
+    
+    if [ $retries -eq $max_retries ]; then
+        print_error "Nginx container is not accessible after waiting"
+        return 1
+    fi
+    
+    # Now test the configuration
+    if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
         return 0
     else
         print_error "Nginx configuration test failed"
-        docker compose exec nginx nginx -t
+        docker compose exec -T nginx nginx -t
         return 1
     fi
 }
