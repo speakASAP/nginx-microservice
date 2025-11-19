@@ -301,5 +301,6 @@ if [ "$STOPPED_COUNT" -gt 0 ]; then
     docker ps -a --filter "status=exited" --format "  - {{.Names}}: {{.Status}}" 2>&1 | head -20
 fi
 
-exit 0
+$SCRIPT_DIR/status-all-services.sh
 
+exit 0

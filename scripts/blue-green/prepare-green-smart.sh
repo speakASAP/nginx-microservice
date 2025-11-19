@@ -288,12 +288,15 @@ else
     MAX_STARTUP=$((FRONTEND_STARTUP > BACKEND_STARTUP ? FRONTEND_STARTUP : BACKEND_STARTUP))
 fi
 
-# Ensure MAX_STARTUP is numeric and at least 5 seconds
+# Ensure MAX_STARTUP is numeric and at least 5 seconds, but cap at 10 seconds
 if ! [[ "$MAX_STARTUP" =~ ^[0-9]+$ ]]; then
     MAX_STARTUP=5
 fi
 if [ "$MAX_STARTUP" -lt 5 ]; then
     MAX_STARTUP=5
+fi
+if [ "$MAX_STARTUP" -gt 10 ]; then
+    MAX_STARTUP=10
 fi
 
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Waiting ${MAX_STARTUP} seconds for services to start"

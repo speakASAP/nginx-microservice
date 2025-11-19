@@ -560,4 +560,6 @@ else
     print_success "All running containers appear ${GREEN_CHECK} healthy"
 fi
 
+$SCRIPT_DIR/status-all-services.sh
+
 exit 0
