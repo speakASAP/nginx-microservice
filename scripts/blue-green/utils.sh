@@ -239,6 +239,14 @@ update_nginx_upstream() {
             green_exists=true
         fi
         
+        # Fallback: Check if container exists without color suffix (single-container deployment)
+        local single_container_exists=false
+        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
+            if docker ps --format "{{.Names}}" | grep -q "^${container_base}$"; then
+                single_container_exists=true
+            fi
+        fi
+        
         # Determine backup status for this service
         local blue_backup green_backup
         if [ "$active_color" = "blue" ]; then
@@ -252,44 +260,72 @@ update_nginx_upstream() {
         # Update upstream block for this service
         # First, remove placeholder line if it exists (simple pattern match)
         $SED_IN_PLACE -e "/server 127\.0\.0\.1:65535 down.*Placeholder/d" "$config_file"
-        # Uncomment any commented lines
-        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
-        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
         
-        # Update blue server
-        if [ "$blue_exists" = "true" ]; then
+        # Handle single-container deployment (no color suffix)
+        if [ "$single_container_exists" = "true" ]; then
+            # Remove any color-suffixed server lines
+            $SED_IN_PLACE -e "/server ${container_base}-\(blue\|green\):/d" "$config_file"
+            # Add single container server line
             if [ -n "$blue_weight" ]; then
-                # Blue has weight (active), update it
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                # Blue is active
+                if ! grep -q "server ${container_base}:${service_port}" "$config_file"; then
+                    $SED_IN_PLACE -e "/^upstream ${upstream_name} {/a\\
+    server ${container_base}:${service_port} weight=${blue_weight} max_fails=3 fail_timeout=30s;
+" "$config_file"
+                else
+                    $SED_IN_PLACE -e "s|server ${container_base}:${service_port}[^;]*|server ${container_base}:${service_port} weight=${blue_weight} max_fails=3 fail_timeout=30s|g" "$config_file"
+                fi
             else
-                # Blue is backup, remove weight
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                # Green is active
+                if ! grep -q "server ${container_base}:${service_port}" "$config_file"; then
+                    $SED_IN_PLACE -e "/^upstream ${upstream_name} {/a\\
+    server ${container_base}:${service_port} weight=${green_weight} max_fails=3 fail_timeout=30s;
+" "$config_file"
+                else
+                    $SED_IN_PLACE -e "s|server ${container_base}:${service_port}[^;]*|server ${container_base}:${service_port} weight=${green_weight} max_fails=3 fail_timeout=30s|g" "$config_file"
+                fi
             fi
         else
-            # Comment out blue if container doesn't exist
-            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-blue|    # server ${container_base}-blue|g" "$config_file"
-        fi
-        
-        # Update green server
-        if [ "$green_exists" = "true" ]; then
-            if [ -n "$green_weight" ]; then
-                # Green has weight (active), update it
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+            # Standard blue/green deployment
+            # Uncomment any commented lines
+            $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
+            $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
+            
+            # Update blue server
+            if [ "$blue_exists" = "true" ]; then
+                if [ -n "$blue_weight" ]; then
+                    # Blue has weight (active), update it
+                    $SED_IN_PLACE \
+                        -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s|g" \
+                        "$config_file"
+                else
+                    # Blue is backup, remove weight
+                    $SED_IN_PLACE \
+                        -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s|g" \
+                        "$config_file"
+                fi
             else
-                # Green is backup, remove weight
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                # Comment out blue if container doesn't exist
+                $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-blue|    # server ${container_base}-blue|g" "$config_file"
             fi
-        else
-            # Comment out green if container doesn't exist
-            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-green|    # server ${container_base}-green|g" "$config_file"
+            
+            # Update green server
+            if [ "$green_exists" = "true" ]; then
+                if [ -n "$green_weight" ]; then
+                    # Green has weight (active), update it
+                    $SED_IN_PLACE \
+                        -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s|g" \
+                        "$config_file"
+                else
+                    # Green is backup, remove weight
+                    $SED_IN_PLACE \
+                        -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s|g" \
+                        "$config_file"
+                fi
+            else
+                # Comment out green if container doesn't exist
+                $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-green|    # server ${container_base}-green|g" "$config_file"
+            fi
         fi
         
         log_message "INFO" "$service_name" "$active_color" "switch" "Updated upstream for service: $service_key (${container_base})"

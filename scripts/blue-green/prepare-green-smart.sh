@@ -67,9 +67,15 @@ else
     COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${PREPARE_COLOR}.yml/")
 fi
 
+# Fallback to generic docker-compose.yml if color-specific file doesn't exist
 if [ ! -f "$COMPOSE_FILE" ]; then
-    print_error "Docker compose file not found: $COMPOSE_FILE"
-    exit 1
+    if [ -f "docker-compose.yml" ]; then
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Color-specific compose file not found, using docker-compose.yml"
+        COMPOSE_FILE="docker-compose.yml"
+    else
+        print_error "Docker compose file not found: $COMPOSE_FILE (and docker-compose.yml not found)"
+        exit 1
+    fi
 fi
 
 # Determine project name
@@ -202,6 +208,65 @@ else
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "No services need rebuilding (all containers are healthy)"
 fi
 
+# Check if containers already exist and handle them
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking for existing containers and port conflicts"
+
+# Get all services from docker-compose file
+SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "")
+
+if [ -z "$SERVICES" ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to get services from docker-compose file"
+    exit 1
+fi
+
+# Get actual container names from docker-compose config
+COMPOSE_CONFIG=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null || echo "")
+
+# Check each service for existing containers and port conflicts
+while IFS= read -r service; do
+    CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services.${service}.container_name_base // empty" 2>/dev/null || echo "")
+    if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ]; then
+        CONTAINER_BASE="${DOCKER_PROJECT_BASE}-${service}"
+    fi
+    CONTAINER_NAME="${CONTAINER_BASE}-${PREPARE_COLOR}"
+    
+    # Get actual container name from compose config (may be different from expected)
+    ACTUAL_CONTAINER_NAME=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
+    
+    # If compose config doesn't have container_name, docker-compose will use PROJECT_NAME-SERVICE_NAME format
+    if [ -z "$ACTUAL_CONTAINER_NAME" ]; then
+        ACTUAL_CONTAINER_NAME="${PROJECT_NAME}-${service}"
+    fi
+    
+    # Check for actual container name that will be created
+    if docker ps -a --format "{{.Names}}" | grep -qE "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$"; then
+        EXISTING_CONTAINER=$(docker ps -a --format "{{.Names}}" | grep -E "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$" | head -1)
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Found existing container ${EXISTING_CONTAINER}"
+        
+        if docker ps --format "{{.Names}}" | grep -qE "^${EXISTING_CONTAINER}$"; then
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} is running, stopping and removing it"
+            docker stop "${EXISTING_CONTAINER}" 2>/dev/null || true
+            docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
+        else
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} exists but not running, removing it"
+            docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
+        fi
+    fi
+    
+    # Check for port conflicts
+    PORT=$(echo "$REGISTRY" | jq -r ".services.${service}.port // empty" 2>/dev/null || echo "")
+    if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
+        # Check if port is in use
+        PORT_IN_USE=$(docker ps --format "{{.Names}}\t{{.Ports}}" | grep -E ":${PORT}->|:${PORT}/" | grep -v "^${EXISTING_CONTAINER}" | head -1 || echo "")
+        if [ -n "$PORT_IN_USE" ]; then
+            CONFLICT_CONTAINER=$(echo "$PORT_IN_USE" | awk '{print $1}')
+            log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Port ${PORT} is in use by container ${CONFLICT_CONTAINER}, stopping it"
+            docker stop "${CONFLICT_CONTAINER}" 2>/dev/null || true
+            docker rm -f "${CONFLICT_CONTAINER}" 2>/dev/null || true
+        fi
+    fi
+done <<< "$SERVICES"
+
 # Start/restart containers
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Starting containers for $PREPARE_COLOR"
 
@@ -214,7 +279,7 @@ fi
 FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time // empty')
 BACKEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.backend.startup_time // empty')
 if [ -z "$FRONTEND_STARTUP" ] && [ -z "$BACKEND_STARTUP" ]; then
-    MAX_STARTUP=40
+    MAX_STARTUP=10
 elif [ -z "$FRONTEND_STARTUP" ]; then
     MAX_STARTUP=$BACKEND_STARTUP
 elif [ -z "$BACKEND_STARTUP" ]; then

@@ -23,25 +23,26 @@ ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking health of $ACTIVE_COLOR deployment"
 
-# Get service info
-BACKEND_CONTAINER=$(echo "$REGISTRY" | jq -r ".services.backend.container_name_base")-${ACTIVE_COLOR}
-FRONTEND_CONTAINER=$(echo "$REGISTRY" | jq -r ".services.frontend.container_name_base")-${ACTIVE_COLOR}
-BACKEND_PORT=$(echo "$REGISTRY" | jq -r '.services.backend.port')
-FRONTEND_PORT=$(echo "$REGISTRY" | jq -r '.services.frontend.port')
-BACKEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.backend.health_endpoint')
-FRONTEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.frontend.health_endpoint')
-BACKEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.backend.health_timeout')
-FRONTEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.frontend.health_timeout')
-BACKEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.backend.health_retries')
-FRONTEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.frontend.health_retries')
-
 # Health check function
 check_health() {
     local container_name="$1"
     local port="$2"
     local endpoint="$3"
-    local timeout="$4"
-    local retries="$5"
+    local timeout="${4:-5}"
+    local retries="${5:-3}"
+    
+    # Validate inputs
+    if [ -z "$container_name" ] || [ "$container_name" = "null" ] || [ -z "$port" ] || [ "$port" = "null" ] || [ -z "$endpoint" ] || [ "$endpoint" = "null" ]; then
+        return 1
+    fi
+    
+    # Ensure timeout and retries are numeric
+    if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
+        timeout=5
+    fi
+    if ! [[ "$retries" =~ ^[0-9]+$ ]]; then
+        retries=3
+    fi
     
     local attempt=0
     while [ $attempt -lt $retries ]; do
@@ -57,40 +58,67 @@ check_health() {
     return 1
 }
 
-BACKEND_HEALTHY=false
-FRONTEND_HEALTHY=false
+# Get all service keys from the registry
+SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
 
-# Check backend health
-log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking backend: $BACKEND_CONTAINER:$BACKEND_PORT$BACKEND_HEALTH"
-
-if check_health "$BACKEND_CONTAINER" "$BACKEND_PORT" "$BACKEND_HEALTH" "$BACKEND_TIMEOUT" "$BACKEND_RETRIES"; then
-    BACKEND_HEALTHY=true
-    log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Backend health check passed"
-else
-    log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Backend health check failed"
+if [ -z "$SERVICE_KEYS" ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "No services found in registry"
+    exit 1
 fi
 
-# Check frontend health
-log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking frontend: $FRONTEND_CONTAINER:$FRONTEND_PORT$FRONTEND_HEALTH"
+HEALTHY_COUNT=0
+TOTAL_COUNT=0
+HEALTHY_SERVICES=()
 
-if check_health "$FRONTEND_CONTAINER" "$FRONTEND_PORT" "$FRONTEND_HEALTH" "$FRONTEND_TIMEOUT" "$FRONTEND_RETRIES"; then
-    FRONTEND_HEALTHY=true
-    log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Frontend health check passed"
-else
-    log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Frontend health check failed"
-fi
+# Check each service in the registry
+while IFS= read -r service_key; do
+    # Get service configuration
+    CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+    PORT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].port // empty" 2>/dev/null)
+    HEALTH_ENDPOINT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_endpoint // empty" 2>/dev/null)
+    HEALTH_TIMEOUT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_timeout // 5" 2>/dev/null)
+    HEALTH_RETRIES=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_retries // 3" 2>/dev/null)
+    
+    # Skip if required fields are missing
+    if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ] || [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$HEALTH_ENDPOINT" ] || [ "$HEALTH_ENDPOINT" = "null" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Skipping $service_key: missing required configuration"
+        continue
+    fi
+    
+    TOTAL_COUNT=$((TOTAL_COUNT + 1))
+    
+    # Determine container name - check if service uses color suffix or single container
+    CONTAINER_NAME="${CONTAINER_BASE}-${ACTIVE_COLOR}"
+    
+    # Check if single-container deployment exists (no color suffix)
+    if ! docker ps --format "{{.Names}}" | grep -qE "^${CONTAINER_NAME}$"; then
+        # Try without color suffix
+        if docker ps --format "{{.Names}}" | grep -qE "^${CONTAINER_BASE}$"; then
+            CONTAINER_NAME="${CONTAINER_BASE}"
+        fi
+    fi
+    
+    log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking $service_key: $CONTAINER_NAME:$PORT$HEALTH_ENDPOINT"
+    
+    if check_health "$CONTAINER_NAME" "$PORT" "$HEALTH_ENDPOINT" "$HEALTH_TIMEOUT" "$HEALTH_RETRIES"; then
+        HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
+        HEALTHY_SERVICES+=("$service_key")
+        log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$service_key health check passed"
+    else
+        log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$service_key health check failed"
+    fi
+done <<< "$SERVICE_KEYS"
 
-# If any service is healthy, consider it successful
-if [ "$BACKEND_HEALTHY" = true ] || [ "$FRONTEND_HEALTHY" = true ]; then
-    log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "At least one service is healthy"
+# If at least one service is healthy, consider it successful
+if [ $HEALTHY_COUNT -gt 0 ]; then
+    log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$HEALTHY_COUNT/$TOTAL_COUNT services healthy: ${HEALTHY_SERVICES[*]}"
     exit 0
 fi
 
 # All health checks failed - trigger rollback
-log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "All health checks failed, triggering rollback"
+log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "All health checks failed ($TOTAL_COUNT services), triggering rollback"
 
 # Call rollback script
 "${SCRIPT_DIR}/rollback.sh" "$SERVICE_NAME"
 
 exit 1
-
