@@ -352,8 +352,8 @@ test_nginx_config() {
     # Wait for nginx container to be running (not restarting)
     while [ $elapsed -lt $max_wait ]; do
         local container_status=$(docker compose ps nginx --format "{{.Status}}" 2>/dev/null || echo "")
-        if echo "$container_status" | grep -qE "Up.*\(healthy\)|Up.*\(unhealthy\)"; then
-            # Container is running (healthy or unhealthy, but running)
+        if echo "$container_status" | grep -qE "^Up"; then
+            # Container is running (Up, Up (healthy), Up (unhealthy), etc.)
             break
         elif echo "$container_status" | grep -qE "Restarting|Starting"; then
             # Container is restarting or starting, wait
