@@ -74,7 +74,7 @@ if [ ! -f "$COMPOSE_FILE" ]; then
         COMPOSE_FILE="docker-compose.yml"
     else
         print_error "Docker compose file not found: $COMPOSE_FILE (and docker-compose.yml not found)"
-        exit 1
+    exit 1
     fi
 fi
 

@@ -288,43 +288,43 @@ update_nginx_upstream() {
         else
             # Standard blue/green deployment
             # Uncomment any commented lines
-            $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
-            $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
-            
-            # Update blue server
-            if [ "$blue_exists" = "true" ]; then
-                if [ -n "$blue_weight" ]; then
-                    # Blue has weight (active), update it
-                    $SED_IN_PLACE \
-                        -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                        "$config_file"
-                else
-                    # Blue is backup, remove weight
-                    $SED_IN_PLACE \
-                        -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                        "$config_file"
-                fi
+        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
+        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
+        
+        # Update blue server
+        if [ "$blue_exists" = "true" ]; then
+            if [ -n "$blue_weight" ]; then
+                # Blue has weight (active), update it
+                $SED_IN_PLACE \
+                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s|g" \
+                    "$config_file"
             else
-                # Comment out blue if container doesn't exist
-                $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-blue|    # server ${container_base}-blue|g" "$config_file"
+                # Blue is backup, remove weight
+                $SED_IN_PLACE \
+                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s|g" \
+                    "$config_file"
             fi
-            
-            # Update green server
-            if [ "$green_exists" = "true" ]; then
-                if [ -n "$green_weight" ]; then
-                    # Green has weight (active), update it
-                    $SED_IN_PLACE \
-                        -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                        "$config_file"
-                else
-                    # Green is backup, remove weight
-                    $SED_IN_PLACE \
-                        -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                        "$config_file"
-                fi
+        else
+            # Comment out blue if container doesn't exist
+            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-blue|    # server ${container_base}-blue|g" "$config_file"
+        fi
+        
+        # Update green server
+        if [ "$green_exists" = "true" ]; then
+            if [ -n "$green_weight" ]; then
+                # Green has weight (active), update it
+                $SED_IN_PLACE \
+                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s|g" \
+                    "$config_file"
             else
-                # Comment out green if container doesn't exist
-                $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-green|    # server ${container_base}-green|g" "$config_file"
+                # Green is backup, remove weight
+                $SED_IN_PLACE \
+                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s|g" \
+                    "$config_file"
+            fi
+        else
+            # Comment out green if container doesn't exist
+            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-green|    # server ${container_base}-green|g" "$config_file"
             fi
         fi
         
@@ -398,5 +398,58 @@ check_docker_compose_available() {
     fi
     
     return 0
+}
+
+# Function to check HTTPS URL availability
+check_https_url() {
+    local domain="$1"
+    local timeout="${2:-10}"
+    local retries="${3:-3}"
+    local endpoint="${4:-/}"
+    local service_name="${5:-}"
+    local color="${6:-}"
+    
+    # Validate domain
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
+        return 1
+    fi
+    
+    # Ensure timeout and retries are numeric
+    if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
+        timeout=10
+    fi
+    if ! [[ "$retries" =~ ^[0-9]+$ ]]; then
+        retries=3
+    fi
+    
+    # Construct URL
+    local url="https://${domain}${endpoint}"
+    local attempt=0
+    
+    # Log attempt if service context provided
+    if [ -n "$service_name" ]; then
+        log_message "INFO" "$service_name" "$color" "https-check" "Checking HTTPS availability: $url (timeout: ${timeout}s, retries: ${retries})"
+    fi
+    
+    while [ $attempt -lt $retries ]; do
+        attempt=$((attempt + 1))
+        # Use curl with proper flags for HTTPS check
+        # -s: silent, -f: fail on HTTP errors, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
+        if curl -s -f --max-time "$timeout" -k "$url" >/dev/null 2>&1; then
+            if [ -n "$service_name" ]; then
+                log_message "SUCCESS" "$service_name" "$color" "https-check" "HTTPS check passed: $url (attempt $attempt/$retries)"
+            fi
+            return 0
+        fi
+        if [ $attempt -lt $retries ]; then
+            sleep 1
+        fi
+    done
+    
+    # All attempts failed
+    if [ -n "$service_name" ]; then
+        log_message "ERROR" "$service_name" "$color" "https-check" "HTTPS check failed: $url (all $retries attempts failed)"
+    fi
+    return 1
 }
 

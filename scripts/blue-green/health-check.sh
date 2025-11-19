@@ -99,19 +99,41 @@ while IFS= read -r service_key; do
     fi
     
     log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking $service_key: $CONTAINER_NAME:$PORT$HEALTH_ENDPOINT"
-    
+
     if check_health "$CONTAINER_NAME" "$PORT" "$HEALTH_ENDPOINT" "$HEALTH_TIMEOUT" "$HEALTH_RETRIES"; then
         HEALTHY_COUNT=$((HEALTHY_COUNT + 1))
         HEALTHY_SERVICES+=("$service_key")
         log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$service_key health check passed"
-    else
+else
         log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$service_key health check failed"
-    fi
+fi
 done <<< "$SERVICE_KEYS"
 
 # If at least one service is healthy, consider it successful
 if [ $HEALTHY_COUNT -gt 0 ]; then
     log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "$HEALTHY_COUNT/$TOTAL_COUNT services healthy: ${HEALTHY_SERVICES[*]}"
+    
+    # Check HTTPS URL availability if domain is configured
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
+    if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
+        # Get HTTPS check configuration from registry (optional)
+        HTTPS_TIMEOUT=$(echo "$REGISTRY" | jq -r '.https_check_timeout // 10' 2>/dev/null)
+        HTTPS_RETRIES=$(echo "$REGISTRY" | jq -r '.https_check_retries // 3' 2>/dev/null)
+        HTTPS_ENDPOINT=$(echo "$REGISTRY" | jq -r '.https_check_endpoint // "/"' 2>/dev/null)
+        HTTPS_ENABLED=$(echo "$REGISTRY" | jq -r '.https_check_enabled // true' 2>/dev/null)
+        
+        # Only check if enabled (default: true)
+        if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then
+            if check_https_url "$DOMAIN" "$HTTPS_TIMEOUT" "$HTTPS_RETRIES" "$HTTPS_ENDPOINT" "$SERVICE_NAME" "$ACTIVE_COLOR"; then
+                log_message "SUCCESS" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "HTTPS URL check passed: https://${DOMAIN}${HTTPS_ENDPOINT}"
+            else
+                log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "HTTPS URL check failed: https://${DOMAIN}${HTTPS_ENDPOINT} (internal checks passed)"
+            fi
+        fi
+    else
+        log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "No domain configured in registry, skipping HTTPS URL check"
+    fi
+    
     exit 0
 fi
 

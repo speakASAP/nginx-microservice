@@ -83,14 +83,46 @@ done
 
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 3 completed: Green deployment healthy for 5 minutes"
 
-# Phase 4: Cleanup old color
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 4: Cleaning up old blue deployment"
+# Phase 4: Final HTTPS URL verification
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 4: Verifying final HTTPS URL availability"
 
-if ! "${SCRIPT_DIR}/cleanup.sh" "$SERVICE_NAME"; then
-    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 warning: cleanup.sh had issues, but deployment is successful"
+# Load service registry to get domain
+REGISTRY=$(load_service_registry "$SERVICE_NAME")
+DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
+
+if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
+    # Get HTTPS check configuration from registry (optional)
+    HTTPS_TIMEOUT=$(echo "$REGISTRY" | jq -r '.https_check_timeout // 10' 2>/dev/null)
+    HTTPS_RETRIES=$(echo "$REGISTRY" | jq -r '.https_check_retries // 3' 2>/dev/null)
+    HTTPS_ENDPOINT=$(echo "$REGISTRY" | jq -r '.https_check_endpoint // "/"' 2>/dev/null)
+    HTTPS_ENABLED=$(echo "$REGISTRY" | jq -r '.https_check_enabled // true' 2>/dev/null)
+    
+    # Only check if enabled (default: true)
+    if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then
+        # Get active color from state
+        STATE=$(load_state "$SERVICE_NAME")
+        ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
+        
+        if check_https_url "$DOMAIN" "$HTTPS_TIMEOUT" "$HTTPS_RETRIES" "$HTTPS_ENDPOINT" "$SERVICE_NAME" "$ACTIVE_COLOR"; then
+            log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 completed: HTTPS URL verified: https://${DOMAIN}${HTTPS_ENDPOINT}"
+        else
+            log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 warning: HTTPS URL check failed for https://${DOMAIN}${HTTPS_ENDPOINT} (deployment successful, internal checks passed)"
+        fi
+    else
+        log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 skipped: HTTPS check disabled in registry"
+    fi
+else
+    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 skipped: No domain configured in registry"
 fi
 
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 completed: Old deployment cleaned up"
+# Phase 5: Cleanup old color
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5: Cleaning up old blue deployment"
+
+if ! "${SCRIPT_DIR}/cleanup.sh" "$SERVICE_NAME"; then
+    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 warning: cleanup.sh had issues, but deployment is successful"
+fi
+
+log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 completed: Old deployment cleaned up"
 
 # Final success
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="
