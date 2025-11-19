@@ -449,9 +449,9 @@ if [ "$SKIP_MICROSERVICES" = false ]; then
     print_status "Phase 2: Starting Microservices"
     print_status "--------------------------------"
     
-    local service_count=0
-    local success_count=0
-    local fail_count=0
+    service_count=0
+    success_count=0
+    fail_count=0
     
     for service in "${MICROSERVICES[@]}"; do
         if [ -n "$SINGLE_SERVICE" ] && [ "$SINGLE_SERVICE" != "$service" ]; then
@@ -489,9 +489,9 @@ if [ "$SKIP_APPLICATIONS" = false ]; then
     print_status "Phase 3: Starting Applications"
     print_status "------------------------------"
     
-    local service_count=0
-    local success_count=0
-    local fail_count=0
+    service_count=0
+    success_count=0
+    fail_count=0
     
     for service in "${APPLICATIONS[@]}"; do
         if [ -n "$SINGLE_SERVICE" ] && [ "$SINGLE_SERVICE" != "$service" ]; then
