@@ -350,35 +350,49 @@ test_nginx_config() {
     cd "$NGINX_PROJECT_DIR"
     
     # Wait for nginx container to be running (not restarting)
+    # We need to wait for it to be stable, not just "Up" once
+    local stable_count=0
+    local required_stable=3  # Container must be "Up" for 3 consecutive checks
+    
     while [ $elapsed -lt $max_wait ]; do
         local container_status=$(docker compose ps nginx --format "{{.Status}}" 2>/dev/null || echo "")
         if echo "$container_status" | grep -qE "^Up"; then
-            # Container is running (Up, Up (healthy), Up (unhealthy), etc.)
-            break
+            # Container is running, increment stable count
+            stable_count=$((stable_count + 1))
+            if [ $stable_count -ge $required_stable ]; then
+                # Container has been stable for required checks
+                break
+            fi
         elif echo "$container_status" | grep -qE "Restarting|Starting"; then
-            # Container is restarting or starting, wait
-            sleep $wait_interval
-            elapsed=$((elapsed + wait_interval))
+            # Container is restarting or starting, reset stable count
+            stable_count=0
         else
-            # Container might not exist or be stopped
-            sleep $wait_interval
-            elapsed=$((elapsed + wait_interval))
+            # Container might not exist or be stopped, reset stable count
+            stable_count=0
         fi
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
     done
     
     # Additional check: ensure container is actually accessible
+    # Wait longer if container was restarting
     local retries=0
-    local max_retries=5
+    local max_retries=10  # Increased from 5 to 10
     while [ $retries -lt $max_retries ]; do
         if docker compose exec -T nginx echo >/dev/null 2>&1; then
-            break
+            # Container is accessible, verify it stays accessible
+            sleep 1
+            if docker compose exec -T nginx echo >/dev/null 2>&1; then
+                break
+            fi
         fi
         sleep 1
         retries=$((retries + 1))
     done
     
     if [ $retries -eq $max_retries ]; then
-        print_error "Nginx container is not accessible after waiting"
+        print_error "Nginx container is not accessible after waiting (container may be in restart loop)"
+        print_error "Check nginx logs: docker logs nginx-microservice"
         return 1
     fi
     
