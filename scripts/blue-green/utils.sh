@@ -180,53 +180,45 @@ get_inactive_color() {
     fi
 }
 
-# Function to update nginx upstream
-update_nginx_upstream() {
-    local config_file="$1"
-    local service_name="$2"
-    local active_color="$3"
-    local inactive_color
-    
-    if [ "$active_color" = "blue" ]; then
-        inactive_color="green"
-    else
-        inactive_color="blue"
-    fi
+# Function to generate nginx config from template based on state and container existence
+generate_nginx_config() {
+    local service_name="$1"
+    local active_color="$2"
+    local config_file="$3"
     
     local registry=$(load_service_registry "$service_name")
     
-    # Backup original config
-    cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    # Detect sed in-place edit flag (different for BSD/macOS vs GNU/Linux)
-    if sed --version >/dev/null 2>&1; then
-        # GNU sed (Linux)
-        SED_IN_PLACE="sed -i"
-    else
-        # BSD sed (macOS)
-        SED_IN_PLACE="sed -i ''"
+    # Read existing config to preserve non-upstream content
+    if [ ! -f "$config_file" ]; then
+        print_error "Config file not found: $config_file"
+        return 1
     fi
     
-    # Determine weights and backup status
-    local blue_weight green_weight
-    if [ "$active_color" = "blue" ]; then
-        blue_weight=100
-        green_weight=""  # No weight means backup server (nginx default)
-    else
-        blue_weight=""  # No weight means backup server (nginx default)
-        green_weight=100
+    local existing_config=$(cat "$config_file")
+    
+    # Find where upstream blocks end and server blocks begin
+    local server_block_line=$(echo "$existing_config" | grep -n "^# HTTP Server" | head -1 | cut -d: -f1)
+    
+    if [ -z "$server_block_line" ]; then
+        print_error "Cannot find server block in config file: $config_file"
+        return 1
     fi
     
-    # Get all services from registry and update each upstream
+    # Extract server blocks (everything from "# HTTP Server" onwards)
+    local server_blocks=$(echo "$existing_config" | sed -n "${server_block_line},\$p")
+    
+    # Generate upstream blocks for each service
     local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    local upstream_blocks="# Upstream blocks for blue/green deployment
+"
     
     while IFS= read -r service_key; do
         local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base")
         local service_port=$(echo "$registry" | jq -r ".services[\"$service_key\"].port")
         
-        # Determine nginx upstream name (use container_base as upstream name)
-        # For statex, upstreams are named like: statex-frontend, statex-user-portal, etc.
-        local upstream_name="$container_base"
+        if [ -z "$container_base" ] || [ "$container_base" = "null" ] || [ -z "$service_port" ] || [ "$service_port" = "null" ]; then
+            continue
+        fi
         
         # Check if containers exist
         local blue_exists=false
@@ -239,104 +231,146 @@ update_nginx_upstream() {
             green_exists=true
         fi
         
-        # Fallback: Check if container exists without color suffix (single-container deployment)
-        local single_container_exists=false
-        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
-            if docker ps --format "{{.Names}}" | grep -q "^${container_base}$"; then
-                single_container_exists=true
-            fi
-        fi
-        
-        # Determine backup status for this service
-        local blue_backup green_backup
+        # Determine weights and backup status
+        local blue_weight green_weight blue_backup green_backup
         if [ "$active_color" = "blue" ]; then
+            blue_weight=100
+            green_weight=""
             blue_backup=""
             green_backup=" backup"
         else
+            blue_weight=""
+            green_weight=100
             blue_backup=" backup"
             green_backup=""
         fi
         
-        # Update upstream block for this service
-        # First, remove placeholder line if it exists (simple pattern match)
-        $SED_IN_PLACE -e "/server 127\.0\.0\.1:65535 down.*Placeholder/d" "$config_file"
+        # Build upstream block
+        upstream_blocks="${upstream_blocks}upstream ${container_base} {
+"
         
-        # Handle single-container deployment (no color suffix)
-        if [ "$single_container_exists" = "true" ]; then
-            # Remove any color-suffixed server lines
-            $SED_IN_PLACE -e "/server ${container_base}-\(blue\|green\):/d" "$config_file"
-            # Add single container server line
-            if [ -n "$blue_weight" ]; then
-                # Blue is active
-                if ! grep -q "server ${container_base}:${service_port}" "$config_file"; then
-                    $SED_IN_PLACE -e "/^upstream ${upstream_name} {/a\\
-    server ${container_base}:${service_port} weight=${blue_weight} max_fails=3 fail_timeout=30s;
-" "$config_file"
-                else
-                    $SED_IN_PLACE -e "s|server ${container_base}:${service_port}[^;]*|server ${container_base}:${service_port} weight=${blue_weight} max_fails=3 fail_timeout=30s|g" "$config_file"
-                fi
-            else
-                # Green is active
-                if ! grep -q "server ${container_base}:${service_port}" "$config_file"; then
-                    $SED_IN_PLACE -e "/^upstream ${upstream_name} {/a\\
-    server ${container_base}:${service_port} weight=${green_weight} max_fails=3 fail_timeout=30s;
-" "$config_file"
-                else
-                    $SED_IN_PLACE -e "s|server ${container_base}:${service_port}[^;]*|server ${container_base}:${service_port} weight=${green_weight} max_fails=3 fail_timeout=30s|g" "$config_file"
-                fi
-            fi
-        else
-            # Standard blue/green deployment
-            # Uncomment any commented lines
-        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-blue|    server ${container_base}-blue|g" "$config_file"
-        $SED_IN_PLACE -e "s|^[[:space:]]*# server ${container_base}-green|    server ${container_base}-green|g" "$config_file"
-        
-        # Update blue server
+        # Add blue server if exists
         if [ "$blue_exists" = "true" ]; then
             if [ -n "$blue_weight" ]; then
-                # Blue has weight (active), update it
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+"
             else
-                # Blue is backup, remove weight
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-blue:${service_port}[^;]*|server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+"
             fi
-        else
-            # Comment out blue if container doesn't exist
-            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-blue|    # server ${container_base}-blue|g" "$config_file"
         fi
         
-        # Update green server
+        # Add green server if exists
         if [ "$green_exists" = "true" ]; then
             if [ -n "$green_weight" ]; then
-                # Green has weight (active), update it
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
+                upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+"
             else
-                # Green is backup, remove weight
-                $SED_IN_PLACE \
-                    -e "s|server ${container_base}-green:${service_port}[^;]*|server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s|g" \
-                    "$config_file"
-            fi
-        else
-            # Comment out green if container doesn't exist
-            $SED_IN_PLACE -e "s|^[[:space:]]*server ${container_base}-green|    # server ${container_base}-green|g" "$config_file"
+                upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+"
             fi
         fi
         
-        log_message "INFO" "$service_name" "$active_color" "switch" "Updated upstream for service: $service_key (${container_base})"
+        # Add placeholder if no containers exist
+        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
+            upstream_blocks="${upstream_blocks}    server 127.0.0.1:65535 down max_fails=3 fail_timeout=10s; # Placeholder - will be replaced when containers exist
+"
+        fi
         
+        upstream_blocks="${upstream_blocks}}
+"
     done <<< "$service_keys"
+    
+    # Combine upstream blocks with server blocks
+    local config_content="${upstream_blocks}${server_blocks}"
+    
+    # Output the generated config
+    echo "$config_content"
+}
+
+# Function to update nginx upstream
+update_nginx_upstream() {
+    local config_file="$1"
+    local service_name="$2"
+    local active_color="$3"
+    
+    # Backup original config
+    cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Generate new config
+    local new_config
+    if ! new_config=$(generate_nginx_config "$service_name" "$active_color" "$config_file"); then
+        log_message "ERROR" "$service_name" "$active_color" "switch" "Failed to generate nginx configuration"
+        return 1
+    fi
+    
+    # Write generated config to temporary file first
+    local temp_config="${config_file}.tmp.$$"
+    echo "$new_config" > "$temp_config"
+    
+    # Write to actual config file
+    mv "$temp_config" "$config_file"
     
     log_message "SUCCESS" "$service_name" "$active_color" "switch" "All nginx upstreams updated successfully"
 }
 
-# Function to test nginx config
+# Function to test nginx config for a specific service
+test_service_nginx_config() {
+    local service_name="$1"
+    
+    if [ -z "$service_name" ]; then
+        # If no service name provided, test all configs (original behavior)
+        test_nginx_config
+        return $?
+    fi
+    
+    local registry=$(load_service_registry "$service_name")
+    local domain=$(echo "$registry" | jq -r '.domain')
+    
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
+        print_error "Domain not found in registry for service: $service_name"
+        return 1
+    fi
+    
+    local config_file="${NGINX_PROJECT_DIR}/nginx/conf.d/${domain}.conf"
+    
+    if [ ! -f "$config_file" ]; then
+        print_error "Config file not found: $config_file"
+        return 1
+    fi
+    
+    # Validate config file syntax by checking basic structure
+    # This is a lightweight check - full validation still requires nginx -t
+    if ! grep -q "^upstream " "$config_file" && ! grep -q "server 127.0.0.1:65535" "$config_file"; then
+        print_error "Config file appears to be invalid (no upstream blocks found): $config_file"
+        return 1
+    fi
+    
+    # Test all configs but provide service-specific context
+    # The real isolation comes from generating valid configs
+    log_message "INFO" "$service_name" "validation" "test" "Testing nginx configuration for service: $service_name (${domain})"
+    
+    # Use the standard test but it will validate all configs
+    # This is acceptable because we ensure each service generates valid configs
+    if test_nginx_config; then
+        log_message "SUCCESS" "$service_name" "validation" "test" "Configuration test passed for service: $service_name"
+        return 0
+    else
+        log_message "ERROR" "$service_name" "validation" "test" "Configuration test failed for service: $service_name"
+        return 1
+    fi
+}
+
+# Function to test nginx config (all configs)
 test_nginx_config() {
+    local service_name="${1:-}"  # Optional service name parameter
+    
+    # If service name provided, use per-service validation
+    if [ -n "$service_name" ]; then
+        test_service_nginx_config "$service_name"
+        return $?
+    fi
+    
     local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
     local max_wait=30
     local wait_interval=1
@@ -450,6 +484,65 @@ check_docker_compose_available() {
     fi
     
     return 0
+}
+
+# Function to cleanup service nginx config (set to placeholders when containers are stopped)
+cleanup_service_nginx_config() {
+    local service_name="$1"
+    
+    local registry=$(load_service_registry "$service_name")
+    local domain=$(echo "$registry" | jq -r '.domain')
+    
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
+        log_message "WARNING" "$service_name" "cleanup" "config" "Domain not found in registry, skipping config cleanup"
+        return 0
+    fi
+    
+    local config_file="${NGINX_PROJECT_DIR}/nginx/conf.d/${domain}.conf"
+    
+    if [ ! -f "$config_file" ]; then
+        log_message "WARNING" "$service_name" "cleanup" "config" "Config file not found: $config_file, skipping cleanup"
+        return 0
+    fi
+    
+    # Check if any containers for this service still exist
+    local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    local any_containers_exist=false
+    
+    while IFS= read -r service_key; do
+        local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base")
+        
+        if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
+            continue
+        fi
+        
+        if docker ps -a --format "{{.Names}}" | grep -qE "^${container_base}(-blue|-green)?$"; then
+            any_containers_exist=true
+            break
+        fi
+    done <<< "$service_keys"
+    
+    # If containers still exist, don't cleanup (they might be starting)
+    if [ "$any_containers_exist" = "true" ]; then
+        log_message "INFO" "$service_name" "cleanup" "config" "Containers still exist, skipping config cleanup"
+        return 0
+    fi
+    
+    # Generate config with placeholders (no active color since no containers)
+    # Use "blue" as default, but all upstreams will be placeholders
+    local cleaned_config
+    if ! cleaned_config=$(generate_nginx_config "$service_name" "blue" "$config_file"); then
+        log_message "WARNING" "$service_name" "cleanup" "config" "Failed to generate cleanup config, skipping"
+        return 0
+    fi
+    
+    # Backup original config
+    cp "$config_file" "${config_file}.backup.cleanup.$(date +%Y%m%d_%H%M%S)"
+    
+    # Write cleaned config
+    echo "$cleaned_config" > "$config_file"
+    
+    log_message "INFO" "$service_name" "cleanup" "config" "Config cleaned up (set to placeholders)"
 }
 
 # Function to check HTTPS URL availability

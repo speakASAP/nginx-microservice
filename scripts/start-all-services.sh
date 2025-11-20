@@ -377,6 +377,20 @@ start_service() {
     if [ $deploy_exit_code -eq 0 ]; then
         print_success "Service $service_name deployment completed successfully"
         
+        # Validate nginx config for this service
+        print_detail "Validating nginx configuration for $service_name..."
+        BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
+        if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
+            source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
+            if type test_service_nginx_config >/dev/null 2>&1; then
+                if test_service_nginx_config "$service_name"; then
+                    print_success "Nginx configuration validated for $service_name"
+                else
+                    print_warning "Nginx configuration validation failed for $service_name (service deployed but config may need attention)"
+                fi
+            fi
+        fi
+        
         # Show container status for this service
         print_detail "Checking container status for $service_name..."
         if [ -n "$container_base" ]; then

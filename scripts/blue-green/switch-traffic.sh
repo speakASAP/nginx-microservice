@@ -48,10 +48,10 @@ if ! update_nginx_upstream "$CONFIG_FILE" "$SERVICE_NAME" "$NEW_COLOR"; then
     exit 1
 fi
 
-# Test nginx config
+# Test nginx config (per-service validation)
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Testing nginx configuration"
 
-if ! test_nginx_config; then
+if ! test_service_nginx_config "$SERVICE_NAME"; then
     log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Nginx configuration test failed, reverting changes"
     # Restore backup if exists
     BACKUP_FILE=$(ls -t "${CONFIG_FILE}.backup."* 2>/dev/null | head -1)

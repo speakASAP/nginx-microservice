@@ -100,6 +100,17 @@ stop_service() {
         return 0
     fi
     
+    # Cleanup nginx config before stopping containers
+    # Source utils.sh to get cleanup function
+    BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
+    if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
+        source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
+        if type cleanup_service_nginx_config >/dev/null 2>&1; then
+            print_detail "Cleaning up nginx config for $service_name"
+            cleanup_service_nginx_config "$service_name" || true
+        fi
+    fi
+    
     local service_path=$(get_service_path "$service_name")
     if [ -z "$service_path" ] || [ "$service_path" = "null" ]; then
         print_warning "Service path not found in registry for $service_name, skipping..."

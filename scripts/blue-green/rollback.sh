@@ -63,10 +63,10 @@ if ! update_nginx_upstream "$CONFIG_FILE" "$SERVICE_NAME" "$PREVIOUS_COLOR"; the
     exit 1
 fi
 
-# Test nginx config
+# Test nginx config (per-service validation)
 log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Testing nginx configuration"
 
-if ! test_nginx_config; then
+if ! test_service_nginx_config "$SERVICE_NAME"; then
     log_message "ERROR" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Nginx configuration test failed"
     exit 1
 fi
