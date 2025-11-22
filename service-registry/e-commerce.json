@@ -16,7 +16,7 @@
     },
     "api-gateway": {
       "container_name_base": "e-commerce-api-gateway",
-      "port": 3001,
+      "port": 3011,
       "health_endpoint": "/health",
       "health_timeout": 5,
       "health_retries": 3,
