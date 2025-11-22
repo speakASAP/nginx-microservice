@@ -1,0 +1,22 @@
+{
+  "service_name": "allegro",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/allegro",
+  "production_path": "/home/statex/allegro",
+  "domain": "allegro.statex.cz",
+  "docker_compose_file": "docker-compose.allegro.blue.yml",
+  "docker_project_base": "allegro",
+  "services": {
+    "api-gateway": {
+      "container_name_base": "allegro-api-gateway",
+      "port": 3411,
+      "health_endpoint": "/health",
+      "health_timeout": 10,
+      "health_retries": 3,
+      "startup_time": 60
+    }
+  },
+  "shared_services": [
+    "postgres"
+  ],
+  "network": "nginx-network"
+}
