@@ -430,9 +430,11 @@ The nginx configuration uses a **symlink-based architecture** for zero-downtime 
 
 Each service has three nginx config files:
 
-- `{domain}.blue.conf` - Blue environment configuration
-- `{domain}.green.conf` - Green environment configuration
-- `{domain}.conf` - **Symlink** pointing to the active environment (`.blue.conf` or `.green.conf`)
+- `conf.d/blue-green/{domain}.blue.conf` - Blue environment configuration
+- `conf.d/blue-green/{domain}.green.conf` - Green environment configuration
+- `conf.d/{domain}.conf` - **Symlink** pointing to the active environment (`blue-green/{domain}.blue.conf` or `blue-green/{domain}.green.conf`)
+
+**Note**: Blue and green configs are stored in the `blue-green/` subdirectory to prevent nginx from reading both files simultaneously (which would cause duplicate upstream definitions). Only the symlinks in `conf.d/` are included by nginx.
 
 ### Configuration Generation
 

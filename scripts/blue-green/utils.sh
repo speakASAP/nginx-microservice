@@ -413,8 +413,11 @@ generate_blue_green_configs() {
     local registry=$(load_service_registry "$service_name")
     local template_file="${NGINX_PROJECT_DIR}/nginx/templates/domain-blue-green.conf.template"
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
-    local blue_config="${config_dir}/${domain}.blue.conf"
-    local green_config="${config_dir}/${domain}.green.conf"
+    local blue_green_dir="${config_dir}/blue-green"
+    # Ensure blue-green subdirectory exists
+    mkdir -p "$blue_green_dir"
+    local blue_config="${blue_green_dir}/${domain}.blue.conf"
+    local green_config="${blue_green_dir}/${domain}.green.conf"
     
     if [ ! -f "$template_file" ]; then
         print_error "Template file not found: $template_file"
@@ -529,8 +532,10 @@ ensure_blue_green_configs() {
     local active_color="${3:-blue}"
     
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
-    local blue_config="${config_dir}/${domain}.blue.conf"
-    local green_config="${config_dir}/${domain}.green.conf"
+    local blue_green_dir="${config_dir}/blue-green"
+    mkdir -p "$blue_green_dir"
+    local blue_config="${blue_green_dir}/${domain}.blue.conf"
+    local green_config="${blue_green_dir}/${domain}.green.conf"
     
     # Check if both configs exist
     if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
@@ -564,8 +569,9 @@ switch_config_symlink() {
     fi
     
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local blue_green_dir="${config_dir}/blue-green"
     local symlink_file="${config_dir}/${domain}.conf"
-    local target_file="${config_dir}/${domain}.${target_color}.conf"
+    local target_file="${blue_green_dir}/${domain}.${target_color}.conf"
     
     # Check if target config exists
     if [ ! -f "$target_file" ]; then
@@ -578,8 +584,8 @@ switch_config_symlink() {
         rm -f "$symlink_file"
     fi
     
-    # Create new symlink
-    if ln -s "${domain}.${target_color}.conf" "$symlink_file"; then
+    # Create new symlink (relative path to blue-green subdirectory)
+    if ln -sf "blue-green/${domain}.${target_color}.conf" "$symlink_file"; then
         log_message "SUCCESS" "$domain" "$target_color" "symlink" "Symlink switched to $target_color config"
         return 0
     else
@@ -773,9 +779,10 @@ cleanup_service_nginx_config() {
     fi
     
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local blue_green_dir="${config_dir}/blue-green"
     local symlink_file="${config_dir}/${domain}.conf"
-    local blue_config="${config_dir}/${domain}.blue.conf"
-    local green_config="${config_dir}/${domain}.green.conf"
+    local blue_config="${blue_green_dir}/${domain}.blue.conf"
+    local green_config="${blue_green_dir}/${domain}.green.conf"
     
     # Check if blue/green configs exist (service is migrated)
     if [ ! -f "$blue_config" ] || [ ! -f "$green_config" ]; then

@@ -31,9 +31,11 @@ migrate_service() {
     fi
     
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local blue_green_dir="${config_dir}/blue-green"
+    mkdir -p "$blue_green_dir"
     local old_config="${config_dir}/${domain}.conf"
-    local blue_config="${config_dir}/${domain}.blue.conf"
-    local green_config="${config_dir}/${domain}.green.conf"
+    local blue_config="${blue_green_dir}/${domain}.blue.conf"
+    local green_config="${blue_green_dir}/${domain}.green.conf"
     
     # Check if old config exists
     if [ ! -f "$old_config" ] && [ ! -L "$old_config" ]; then
@@ -169,8 +171,10 @@ else
                 domain=$(echo "$registry" | jq -r '.domain // empty')
                 if [ -n "$domain" ] && [ "$domain" != "null" ]; then
                     config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
-                    blue_config="${config_dir}/${domain}.blue.conf"
-                    green_config="${config_dir}/${domain}.green.conf"
+                    blue_green_dir="${config_dir}/blue-green"
+                    mkdir -p "$blue_green_dir"
+                    blue_config="${blue_green_dir}/${domain}.blue.conf"
+                    green_config="${blue_green_dir}/${domain}.green.conf"
                     
                     if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
                         skipped_count=$((skipped_count + 1))
