@@ -636,8 +636,10 @@ switch_config_symlink() {
         return 1
     fi
     
-    # Clean up upstreams for non-existent containers before switching
-    cleanup_upstreams "$target_file"
+    # Note: We no longer clean up upstreams here because:
+    # 1. We always generate both blue and green servers in upstream blocks
+    # 2. Nginx will handle DNS resolution dynamically when containers start
+    # 3. Removing servers can leave empty upstream blocks which nginx rejects
     
     # Remove existing symlink or file
     if [ -L "$symlink_file" ] || [ -f "$symlink_file" ]; then
