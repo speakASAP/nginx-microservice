@@ -261,7 +261,7 @@ while IFS= read -r service; do
             log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Found existing container ${EXISTING_CONTAINER}"
             
             # Check if it's restarting
-            local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${EXISTING_CONTAINER}" | awk '{print $2}' || echo "")
+            status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${EXISTING_CONTAINER}" | awk '{print $2}' || echo "")
             if [ -n "$status" ] && echo "$status" | grep -qE "Restarting"; then
                 log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} is restarting, force killing it"
                 docker kill "${EXISTING_CONTAINER}" 2>/dev/null || true
@@ -283,10 +283,10 @@ while IFS= read -r service; do
     PORT=$(echo "$REGISTRY" | jq -r ".services.${service}.port // empty" 2>/dev/null || echo "")
     
     # Try to get actual host port from docker-compose file
-    local host_port=""
+    host_port=""
     if [ -f "$COMPOSE_FILE" ]; then
         # Extract host port mapping from compose file for this service
-        local port_mapping=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null | \
+        port_mapping=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null | \
             grep -A 20 "^  ${service}:" | grep -E "^\s+-.*:.*:" | head -1 | \
             sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | \
             sed -E 's/.*"([0-9]+):([0-9]+)".*/\1/' | \
