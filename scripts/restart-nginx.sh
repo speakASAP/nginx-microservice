@@ -1,6 +1,6 @@
 #!/bin/bash
 # Restart Nginx Script
-# Tests configuration and restarts nginx container
+# Syncs containers and symlinks, tests configuration, and restarts nginx container
 
 set -e
 
@@ -8,8 +8,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 
+# First, sync containers and symlinks to ensure everything is correct
+echo "Syncing containers and nginx configuration..."
+if [ -f "${SCRIPT_DIR}/sync-containers-and-nginx.sh" ]; then
+    if ! "${SCRIPT_DIR}/sync-containers-and-nginx.sh"; then
+        echo "❌ Failed to sync containers and configuration"
+        exit 1
+    fi
+    echo ""
+fi
+
 echo "Testing nginx configuration..."
-if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t; then
+if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>/dev/null || docker compose -f "${PROJECT_DIR}/docker-compose.yml" run --rm nginx nginx -t; then
     echo ""
     echo "✅ Configuration test passed"
     echo ""

@@ -115,6 +115,46 @@ docker compose up -d
 ./scripts/reload-nginx.sh
 ```
 
+**Note**: The `restart-nginx.sh` script automatically syncs containers and symlinks before restarting to ensure all configurations point to running containers.
+
+### Container and Nginx Synchronization
+
+The system includes an automated synchronization mechanism that ensures nginx configuration symlinks point to the correct active containers (blue/green) before restarting nginx. This prevents nginx from failing to start due to missing containers.
+
+**Automatic Sync (Recommended)**:
+
+```bash
+# restart-nginx.sh automatically syncs before restarting
+./scripts/restart-nginx.sh
+```
+
+**Manual Sync**:
+
+```bash
+# Sync containers and symlinks (no restart)
+./scripts/sync-containers-and-nginx.sh
+
+# Sync and restart nginx
+./scripts/sync-containers-and-nginx.sh --restart-nginx
+```
+
+**What it does**:
+
+1. Scans all services in the registry
+2. Checks which containers are running (blue, green, or both)
+3. Updates symlinks to point to the color with running containers
+4. Starts missing containers automatically (using deploy-smart.sh)
+5. Validates nginx configuration
+6. Optionally restarts nginx
+
+**Symlink Logic**:
+
+- If containers match expected color → Symlink stays as-is ✅
+- If containers don't match → Updates symlink to match running containers
+- If no containers running → Tries to start them, keeps expected color
+
+For detailed information, see **[Container and Nginx Synchronization Guide](docs/CONTAINER_NGINX_SYNC.md)**.
+
 ### Manual Certificate Operations
 
 ```bash
@@ -505,7 +545,7 @@ For detailed documentation, see:
 
 ### Available Scripts
 
-All scripts are in `scripts/blue-green/`:
+**Blue/Green Deployment Scripts** (in `scripts/blue-green/`):
 
 - `deploy-smart.sh` - **RECOMMENDED**: Full deployment cycle (only rebuilds changed services)
 - `prepare-green-smart.sh` - **RECOMMENDED**: Build and start new deployment (only rebuilds changed services)
@@ -516,9 +556,53 @@ All scripts are in `scripts/blue-green/`:
 - `rollback.sh` - Rollback to previous deployment
 - `cleanup.sh` - Remove old deployment
 
+**Nginx Management Scripts** (in `scripts/`):
+
+- `restart-nginx.sh` - **RECOMMENDED**: Restarts nginx (automatically syncs containers and symlinks first)
+- `sync-containers-and-nginx.sh` - Syncs containers and symlinks, optionally restarts nginx
+- `reload-nginx.sh` - Reloads nginx configuration (lightweight, no restart)
+- `status-all-services.sh` - Shows status of all services and containers
+
 **Note**: The blue/green system uses a modern symlink-based approach where each service has separate blue and green config files (`{domain}.blue.conf` and `{domain}.green.conf`), with a symlink (`{domain}.conf`) pointing to the active environment. This replaces the legacy file-modification approach.
 
-See [Blue/Green Deployment Guide](docs/BLUE_GREEN_DEPLOYMENT.md) for detailed usage.
+### Container and Nginx Synchronization Scripts
+
+The system automatically ensures that nginx configuration symlinks point to the correct active containers before restarting nginx. This is critical for blue/green deployments:
+
+**Key Features**:
+
+- ✅ **Automatic symlink management**: Symlinks automatically point to running containers
+- ✅ **Container detection**: Detects which color (blue/green) has running containers
+- ✅ **Auto-start missing containers**: Starts missing containers using deploy-smart.sh
+- ✅ **Safe nginx restart**: Validates configuration before restarting
+- ✅ **Integrated with restart-nginx.sh**: Automatically syncs before restart
+
+**Usage**:
+
+```bash
+# Recommended: restart-nginx.sh automatically syncs
+./scripts/restart-nginx.sh
+
+# Manual sync (no restart)
+./scripts/sync-containers-and-nginx.sh
+
+# Manual sync and restart
+./scripts/sync-containers-and-nginx.sh --restart-nginx
+```
+
+**How it works**:
+
+1. Checks all services in the registry
+2. Detects which containers are running (blue/green)
+3. Updates symlinks to match running containers
+4. Starts missing containers if needed
+5. Validates nginx configuration
+6. Restarts nginx (if requested)
+
+For complete documentation, see:
+
+- **[Blue/Green Deployment Guide](docs/BLUE_GREEN_DEPLOYMENT.md)** - Complete usage guide
+- **[Container and Nginx Synchronization Guide](docs/CONTAINER_NGINX_SYNC.md)** - Symlink and container sync details
 
 ## Support
 
