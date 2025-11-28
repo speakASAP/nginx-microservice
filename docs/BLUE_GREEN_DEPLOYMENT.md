@@ -188,11 +188,15 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 
 **What it does**:
 
-1. Updates nginx upstream weights
-2. Reloads nginx configuration
-3. Updates state file
+1. Ensures blue and green configs exist (generates if missing)
+2. Updates symlink to point to new color's config
+3. Tests nginx configuration
+4. Reloads nginx configuration
+5. Updates state file
 
 **When to use**: After prepare-green.sh if you want manual control
+
+**Note**: Uses modern symlink-based switching (no file modifications)
 
 ### `health-check.sh` - Check Service Health
 
@@ -229,6 +233,38 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 
 **When to use**: Manual cleanup or automatically after successful deployment
 
+### `migrate-to-symlinks.sh` - Migrate to Symlink System
+
+**Usage**: `./scripts/blue-green/migrate-to-symlinks.sh [service_name]`
+
+**What it does**:
+
+1. For each service (or specified service):
+   - Checks if blue/green configs exist
+   - Generates configs from template if missing
+   - Creates symlink pointing to active color
+   - Backs up old config files
+   - Tests nginx configuration
+2. Reports migration status for all services
+
+**When to use**:
+
+- Initial migration from legacy file-modification system
+- Adding new services to blue/green system
+- Regenerating configs after service registry changes
+
+**Examples**:
+
+```bash
+# Migrate all services
+./scripts/blue-green/migrate-to-symlinks.sh
+
+# Migrate single service
+./scripts/blue-green/migrate-to-symlinks.sh crypto-ai-agent
+```
+
+**Note**: Safe to run multiple times - skips already-migrated services.
+
 ### `ensure-infrastructure.sh` - Ensure Shared Infrastructure Running
 
 **Usage**: `./scripts/blue-green/ensure-infrastructure.sh <service_name>`
@@ -262,10 +298,12 @@ The deployment system supports **two infrastructure models**:
 #### Model 1: Shared Database-Server (Recommended for Production)
 
 **Container Names:**
+
 - PostgreSQL: `db-server-postgres`
 - Redis: `db-server-redis`
 
 **Setup:**
+
 ```bash
 # Start shared database-server
 cd /path/to/database-server
@@ -276,6 +314,7 @@ cd /path/to/database-server
 ```
 
 **Advantages:**
+
 - Centralized database management
 - Single source of truth
 - Easier backup/restore
@@ -287,16 +326,19 @@ The `ensure-infrastructure.sh` script automatically detects `db-server-postgres`
 #### Model 2: Service-Specific Infrastructure
 
 **Container Names:**
+
 - PostgreSQL: `{service}-postgres` (e.g., `crypto-ai-postgres`)
 - Redis: `{service}-redis` (e.g., `crypto-ai-redis`)
 
 **Setup:**
+
 ```bash
 cd /path/to/service
 docker compose -f docker-compose.infrastructure.yml -p {service}_infrastructure up -d
 ```
 
 **Advantages:**
+
 - Isolated infrastructure per service
 - Good for development/testing
 - Service-specific configurations
@@ -356,7 +398,8 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
    - Health checks
    ↓
 3. switch-traffic.sh
-   - Update nginx config
+   - Ensure blue/green configs exist
+   - Update symlink to point to new color
    - Reload nginx
    ↓
 4. Monitor (5 minutes)
@@ -381,24 +424,87 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
 
 ## Nginx Configuration
 
-The nginx configuration uses upstream blocks:
+The nginx configuration uses a **symlink-based architecture** for zero-downtime switching:
+
+### File Structure
+
+Each service has three nginx config files:
+
+- `{domain}.blue.conf` - Blue environment configuration
+- `{domain}.green.conf` - Green environment configuration
+- `{domain}.conf` - **Symlink** pointing to the active environment (`.blue.conf` or `.green.conf`)
+
+### Configuration Generation
+
+Configs are auto-generated from the service registry using the template system:
+
+1. **Template**: `nginx/templates/domain-blue-green.conf.template`
+2. **Auto-detection**: Services are automatically detected from the service registry JSON
+3. **Upstream blocks**: Generated for each service with proper blue/green container names
+
+### Example Configuration
 
 ```nginx
+# Blue config: crypto-ai-agent.statex.cz.blue.conf
 upstream crypto-ai-frontend {
     server crypto-ai-frontend-blue:3100 weight=100;
-    server crypto-ai-frontend-green:3100 weight=0 backup;
+    server crypto-ai-frontend-green:3100 backup;
 }
 
 upstream crypto-ai-backend {
     server crypto-ai-backend-blue:8100 weight=100;
-    server crypto-ai-backend-green:8100 weight=0 backup;
+    server crypto-ai-backend-green:8100 backup;
 }
+
+# ... server blocks ...
 ```
 
-When switching:
+```nginx
+# Green config: crypto-ai-agent.statex.cz.green.conf
+upstream crypto-ai-frontend {
+    server crypto-ai-frontend-blue:3100 backup;
+    server crypto-ai-frontend-green:3100 weight=100;
+}
+
+upstream crypto-ai-backend {
+    server crypto-ai-backend-blue:8100 backup;
+    server crypto-ai-backend-green:8100 weight=100;
+}
+
+# ... server blocks ...
+```
+
+### Switching Mechanism
+
+When switching traffic:
+
+1. **Symlink update**: `{domain}.conf` symlink is updated to point to the new color's config
+2. **Nginx reload**: Nginx reloads with the new configuration
+3. **Zero downtime**: Switching takes < 2 seconds
+
+**Traffic routing**:
 
 - Active color: `weight=100` (receives all traffic)
-- Inactive color: `weight=0 backup` (standby, only used if active fails)
+- Inactive color: `backup` (standby, only used if active fails)
+
+### Migration
+
+Existing services can be migrated to the symlink system:
+
+```bash
+# Migrate all services
+./scripts/blue-green/migrate-to-symlinks.sh
+
+# Migrate single service
+./scripts/blue-green/migrate-to-symlinks.sh crypto-ai-agent
+```
+
+The migration script:
+
+- Generates blue and green configs from template
+- Creates symlink pointing to current active color
+- Backs up old config files
+- Tests nginx configuration
 
 ## Logging
 
@@ -533,9 +639,11 @@ cat /nginx-microservice/state/crypto-ai-agent.json | jq .green.status
 
 1. Create service registry file in `/nginx-microservice/service-registry/`
 2. Create initial state file in `/nginx-microservice/state/`
-3. Update nginx config to use upstream blocks (or use blue-green template)
-4. Create `docker-compose.blue.yml` and `docker-compose.green.yml` in service repo
+3. Create `docker-compose.blue.yml` and `docker-compose.green.yml` in service repo
+4. Run migration to generate blue/green configs: `./scripts/blue-green/migrate-to-symlinks.sh {service-name}`
 5. Test deployment: `./scripts/blue-green/deploy.sh {service-name}`
+
+**Note**: The migration script automatically generates blue and green nginx configs from the template based on your service registry. No manual nginx config editing required.
 
 ## Performance
 

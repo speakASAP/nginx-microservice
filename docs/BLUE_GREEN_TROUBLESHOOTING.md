@@ -72,25 +72,19 @@ nginx: configuration file /etc/nginx/nginx.conf test failed
 ```bash
 cd /path/to/nginx-microservice
 
-# This automatically comments out missing containers
+# This automatically ensures configs exist and switches symlink
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
 ```
 
-#### **B. Manual Fix**
+#### **B. Regenerate Configs**
 
 ```bash
-# Edit nginx config to comment out missing upstreams
+# Regenerate blue and green configs from template
 cd /path/to/nginx-microservice
-vim nginx/conf.d/crypto-ai-agent.statex.cz.conf
+./scripts/blue-green/migrate-to-symlinks.sh crypto-ai-agent
 
-# Comment out missing servers:
-# server crypto-ai-frontend-green:3100 backup ...;
-
-# Test config
-docker compose exec nginx nginx -t
-
-# Reload if test passes
-docker compose exec nginx nginx -s reload
+# This will regenerate configs based on current service registry
+# and ensure symlink points to correct active color
 ```
 
 #### **C. Verify Containers Exist**
@@ -181,7 +175,10 @@ cat /path/to/nginx-microservice/state/crypto-ai-agent.json | jq .
 # Check actual running containers
 docker ps | grep crypto-ai
 
-# Compare with nginx config
+# Check symlink (points to active color)
+readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+
+# Compare with nginx config (active config)
 cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep upstream
 ```
 
@@ -191,7 +188,7 @@ cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep upstream
 # Option 1: Use switch-traffic to sync (if colors are correct)
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
 
-# Option 2: Manually update state file
+# Option 2: Manually update state file, then switch symlink
 cd /path/to/nginx-microservice
 cat > state/crypto-ai-agent.json << 'EOF'
 {
@@ -215,7 +212,7 @@ cat > state/crypto-ai-agent.json << 'EOF'
 }
 EOF
 
-# Then update nginx config
+# Then switch symlink to match state
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
 ```
 
@@ -301,7 +298,10 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
 # Check state file
 cat state/crypto-ai-agent.json | jq .active_color
 
-# Check nginx config
+# Check nginx config symlink
+readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+
+# Check active config upstream blocks
 cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 2 upstream
 
 # Verify switch-traffic script ran
@@ -311,13 +311,16 @@ tail -20 logs/blue-green/deploy.log | grep switch
 **Fix:**
 
 ```bash
-# Manually switch traffic
+# Manually switch traffic (updates symlink)
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
 
-# Verify nginx config updated
+# Verify symlink points to correct color
+readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+
+# Verify active color in config
 cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep weight
 
-# Reload nginx
+# Nginx reload is automatic, but you can verify
 docker compose exec nginx nginx -s reload
 ```
 
@@ -423,7 +426,10 @@ cat state/crypto-ai-agent.json | jq .
 # Running containers
 docker ps | grep crypto-ai
 
-# Nginx config
+# Nginx config symlink
+readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+
+# Active config upstream blocks
 cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 5 upstream
 
 # Network connectivity

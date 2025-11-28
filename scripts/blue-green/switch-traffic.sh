@@ -31,20 +31,19 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Switching traffic from $ACTIVE_COLOR to $NEW_COLOR"
 
-# Determine nginx config file
-NGINX_CONF_DIR="${NGINX_PROJECT_DIR}/nginx/conf.d"
-CONFIG_FILE="${NGINX_CONF_DIR}/${DOMAIN}.conf"
+# Ensure blue and green configs exist
+log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Ensuring blue and green configs exist"
 
-if [ ! -f "$CONFIG_FILE" ]; then
-    print_error "Nginx config file not found: $CONFIG_FILE"
+if ! ensure_blue_green_configs "$SERVICE_NAME" "$DOMAIN" "$NEW_COLOR"; then
+    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to ensure configs exist"
     exit 1
 fi
 
-# Update nginx upstream blocks
-log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Updating nginx upstream configuration"
+# Switch symlink to new color
+log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Switching symlink to $NEW_COLOR config"
 
-if ! update_nginx_upstream "$CONFIG_FILE" "$SERVICE_NAME" "$NEW_COLOR"; then
-    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to update nginx configuration"
+if ! switch_config_symlink "$DOMAIN" "$NEW_COLOR"; then
+    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to switch symlink"
     exit 1
 fi
 
@@ -52,12 +51,10 @@ fi
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Testing nginx configuration"
 
 if ! test_service_nginx_config "$SERVICE_NAME"; then
-    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Nginx configuration test failed, reverting changes"
-    # Restore backup if exists
-    BACKUP_FILE=$(ls -t "${CONFIG_FILE}.backup."* 2>/dev/null | head -1)
-    if [ -n "$BACKUP_FILE" ]; then
-        cp "$BACKUP_FILE" "$CONFIG_FILE"
-        log_message "WARNING" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Reverted to previous configuration"
+    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Nginx configuration test failed, reverting symlink"
+    # Revert symlink to previous color
+    if switch_config_symlink "$DOMAIN" "$ACTIVE_COLOR"; then
+        log_message "WARNING" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Reverted symlink to $ACTIVE_COLOR"
     fi
     exit 1
 fi
@@ -66,13 +63,11 @@ fi
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Reloading nginx"
 
 if ! reload_nginx; then
-    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to reload nginx, reverting changes"
-    # Restore backup if exists
-    BACKUP_FILE=$(ls -t "${CONFIG_FILE}.backup."* 2>/dev/null | head -1)
-    if [ -n "$BACKUP_FILE" ]; then
-        cp "$BACKUP_FILE" "$CONFIG_FILE"
+    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to reload nginx, reverting symlink"
+    # Revert symlink to previous color
+    if switch_config_symlink "$DOMAIN" "$ACTIVE_COLOR"; then
         reload_nginx
-        log_message "WARNING" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Reverted to previous configuration"
+        log_message "WARNING" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Reverted symlink to $ACTIVE_COLOR"
     fi
     exit 1
 fi

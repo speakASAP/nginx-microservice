@@ -180,37 +180,13 @@ get_inactive_color() {
     fi
 }
 
-# Function to generate nginx config from template based on state and container existence
-generate_nginx_config() {
+# Function to generate upstream blocks for a specific color
+generate_upstream_blocks() {
     local service_name="$1"
     local active_color="$2"
-    local config_file="$3"
-    
     local registry=$(load_service_registry "$service_name")
-    
-    # Read existing config to preserve non-upstream content
-    if [ ! -f "$config_file" ]; then
-        print_error "Config file not found: $config_file"
-        return 1
-    fi
-    
-    local existing_config=$(cat "$config_file")
-    
-    # Find where upstream blocks end and server blocks begin
-    local server_block_line=$(echo "$existing_config" | grep -n "^# HTTP Server" | head -1 | cut -d: -f1)
-    
-    if [ -z "$server_block_line" ]; then
-        print_error "Cannot find server block in config file: $config_file"
-        return 1
-    fi
-    
-    # Extract server blocks (everything from "# HTTP Server" onwards)
-    local server_blocks=$(echo "$existing_config" | sed -n "${server_block_line},\$p")
-    
-    # Generate upstream blocks for each service
     local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
-    local upstream_blocks="# Upstream blocks for blue/green deployment
-"
+    local upstream_blocks=""
     
     while IFS= read -r service_key; do
         local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base")
@@ -220,18 +196,7 @@ generate_nginx_config() {
             continue
         fi
         
-        # Check if containers exist
-        local blue_exists=false
-        local green_exists=false
-        
-        if docker ps --format "{{.Names}}" | grep -q "^${container_base}-blue$"; then
-            blue_exists=true
-        fi
-        if docker ps --format "{{.Names}}" | grep -q "^${container_base}-green$"; then
-            green_exists=true
-        fi
-        
-        # Determine weights and backup status
+        # Determine weights and backup status based on active color
         local blue_weight green_weight blue_backup green_backup
         if [ "$active_color" = "blue" ]; then
             blue_weight=100
@@ -249,31 +214,21 @@ generate_nginx_config() {
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
         
-        # Add blue server if exists
-        if [ "$blue_exists" = "true" ]; then
-            if [ -n "$blue_weight" ]; then
-                upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+        # Add blue server
+        if [ -n "$blue_weight" ]; then
+            upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-            else
-                upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+        else
+            upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-            fi
         fi
         
-        # Add green server if exists
-        if [ "$green_exists" = "true" ]; then
-            if [ -n "$green_weight" ]; then
-                upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+        # Add green server
+        if [ -n "$green_weight" ]; then
+            upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
 "
-            else
-                upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
-"
-            fi
-        fi
-        
-        # Add placeholder if no containers exist
-        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
-            upstream_blocks="${upstream_blocks}    server 127.0.0.1:65535 down max_fails=3 fail_timeout=10s; # Placeholder - will be replaced when containers exist
+        else
+            upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
 "
         fi
         
@@ -281,37 +236,330 @@ generate_nginx_config() {
 "
     done <<< "$service_keys"
     
-    # Combine upstream blocks with server blocks
-    local config_content="${upstream_blocks}${server_blocks}"
-    
-    # Output the generated config
-    echo "$config_content"
+    echo "$upstream_blocks"
 }
 
-# Function to update nginx upstream
-update_nginx_upstream() {
-    local config_file="$1"
-    local service_name="$2"
-    local active_color="$3"
+# Function to generate proxy locations from service registry
+generate_proxy_locations() {
+    local service_name="$1"
+    local registry=$(load_service_registry "$service_name")
+    local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    local proxy_locations=""
     
-    # Backup original config
-    cp "$config_file" "${config_file}.backup.$(date +%Y%m%d_%H%M%S)"
+    # Check if frontend service exists
+    local has_frontend=false
+    local has_backend=false
+    local frontend_container=""
+    local backend_container=""
     
-    # Generate new config
-    local new_config
-    if ! new_config=$(generate_nginx_config "$service_name" "$active_color" "$config_file"); then
-        log_message "ERROR" "$service_name" "$active_color" "switch" "Failed to generate nginx configuration"
+    while IFS= read -r service_key; do
+        if [ "$service_key" = "frontend" ]; then
+            has_frontend=true
+            frontend_container=$(echo "$registry" | jq -r ".services.frontend.container_name_base")
+        elif [ "$service_key" = "backend" ]; then
+            has_backend=true
+            backend_container=$(echo "$registry" | jq -r ".services.backend.container_name_base")
+        fi
+    done <<< "$service_keys"
+    
+    # Generate frontend location (root path)
+    if [ "$has_frontend" = "true" ] && [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
+        proxy_locations="${proxy_locations}    # Frontend routes - using upstream
+    location / {
+        proxy_pass http://${frontend_container};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        # Timeouts
+        proxy_connect_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        
+        # Buffer settings
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
+"
+    fi
+    
+    # Generate backend/API location
+    if [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ]; then
+        proxy_locations="${proxy_locations}    # API routes with stricter rate limiting - using upstream
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://${backend_container}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        proxy_connect_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
+    # WebSocket support - using upstream
+    location /ws {
+        proxy_pass http://${backend_container}/ws;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        
+        proxy_connect_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+    }
+    
+    # Health check endpoint - using upstream
+    location /health {
+        proxy_pass http://${backend_container}/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        access_log off;
+        limit_req zone=api burst=5 nodelay;
+    }
+    
+"
+    fi
+    
+    # For services with api-gateway (like e-commerce), route /api/ to api-gateway
+    local api_gateway_container=$(echo "$registry" | jq -r '.services["api-gateway"].container_name_base // empty')
+    if [ -n "$api_gateway_container" ] && [ "$api_gateway_container" != "null" ]; then
+        # If api-gateway exists and we haven't added /api/ yet, add it
+        if [ "$has_backend" != "true" ] || [ -z "$(echo "$proxy_locations" | grep "location /api/")" ]; then
+            proxy_locations="${proxy_locations}    # API Gateway routes - using upstream
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        
+        proxy_pass http://${api_gateway_container}/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        
+        proxy_connect_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+        
+        proxy_buffer_size 128k;
+        proxy_buffers 4 256k;
+        proxy_busy_buffers_size 256k;
+    }
+    
+"
+        fi
+    fi
+    
+    echo "$proxy_locations"
+}
+
+# Function to generate blue and green nginx configs from template
+generate_blue_green_configs() {
+    local service_name="$1"
+    local domain="$2"
+    local active_color="${3:-blue}"
+    
+    local registry=$(load_service_registry "$service_name")
+    local template_file="${NGINX_PROJECT_DIR}/nginx/templates/domain-blue-green.conf.template"
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local blue_config="${config_dir}/${domain}.blue.conf"
+    local green_config="${config_dir}/${domain}.green.conf"
+    
+    if [ ! -f "$template_file" ]; then
+        print_error "Template file not found: $template_file"
         return 1
     fi
     
-    # Write generated config to temporary file first
-    local temp_config="${config_file}.tmp.$$"
-    echo "$new_config" > "$temp_config"
+    # Generate upstream blocks for blue config
+    local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue")
     
-    # Write to actual config file
-    mv "$temp_config" "$config_file"
+    # Generate upstream blocks for green config
+    local green_upstreams=$(generate_upstream_blocks "$service_name" "green")
     
-    log_message "SUCCESS" "$service_name" "$active_color" "switch" "All nginx upstreams updated successfully"
+    # Generate proxy locations (same for both configs)
+    local proxy_locations=$(generate_proxy_locations "$service_name")
+    
+    # Generate configs using Python for reliable multi-line replacement
+    # Use temporary files to pass multi-line content to Python
+    local temp_upstreams=$(mktemp)
+    local temp_locations=$(mktemp)
+    local temp_python=$(mktemp)
+    
+    echo "$blue_upstreams" > "$temp_upstreams"
+    echo "$proxy_locations" > "$temp_locations"
+    
+    # Create Python script
+    cat > "$temp_python" <<'PYTHON_SCRIPT'
+import sys
+import os
+
+template_file = sys.argv[1]
+output_file = sys.argv[2]
+domain = sys.argv[3]
+upstreams_file = sys.argv[4]
+locations_file = sys.argv[5]
+
+try:
+    # Read template
+    with open(template_file, 'r') as f:
+        template = f.read()
+    
+    # Read upstream blocks and proxy locations
+    with open(upstreams_file, 'r') as f:
+        upstreams = f.read()
+    
+    with open(locations_file, 'r') as f:
+        locations = f.read()
+    
+    # Replace placeholders
+    template = template.replace('{{DOMAIN_NAME}}', domain)
+    template = template.replace('{{UPSTREAM_BLOCKS}}', upstreams)
+    template = template.replace('{{PROXY_LOCATIONS}}', locations)
+    
+    # Write output
+    with open(output_file, 'w') as f:
+        f.write(template)
+    
+except Exception as e:
+    sys.stderr.write(f"Error generating config: {e}\n")
+    sys.exit(1)
+PYTHON_SCRIPT
+    
+    # Generate blue config
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$temp_python" "$template_file" "$blue_config" "$domain" "$temp_upstreams" "$temp_locations" || {
+            print_error "Python3 failed, falling back to sed"
+            # Fallback to sed (simple replacement, may have multi-line issues)
+            sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
+                -e "s|{{UPSTREAM_BLOCKS}}|$blue_upstreams|g" \
+                -e "s|{{PROXY_LOCATIONS}}|$proxy_locations|g" \
+                "$template_file" > "$blue_config"
+        }
+    else
+        print_warning "Python3 not found, using sed (may have issues with multi-line content)"
+        sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
+            -e "s|{{UPSTREAM_BLOCKS}}|$blue_upstreams|g" \
+            -e "s|{{PROXY_LOCATIONS}}|$proxy_locations|g" \
+            "$template_file" > "$blue_config"
+    fi
+    
+    # Update upstreams for green config
+    echo "$green_upstreams" > "$temp_upstreams"
+    
+    # Generate green config
+    if command -v python3 >/dev/null 2>&1; then
+        python3 "$temp_python" "$template_file" "$green_config" "$domain" "$temp_upstreams" "$temp_locations" || {
+            print_error "Python3 failed, falling back to sed"
+            # Fallback to sed
+            sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
+                -e "s|{{UPSTREAM_BLOCKS}}|$green_upstreams|g" \
+                -e "s|{{PROXY_LOCATIONS}}|$proxy_locations|g" \
+                "$template_file" > "$green_config"
+        }
+    else
+        print_warning "Python3 not found, using sed (may have issues with multi-line content)"
+        sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
+            -e "s|{{UPSTREAM_BLOCKS}}|$green_upstreams|g" \
+            -e "s|{{PROXY_LOCATIONS}}|$proxy_locations|g" \
+            "$template_file" > "$green_config"
+    fi
+    
+    # Cleanup
+    rm -f "$temp_upstreams" "$temp_locations" "$temp_python"
+    
+    log_message "SUCCESS" "$service_name" "config" "generate" "Generated blue and green configs for $domain"
+    return 0
+}
+
+# Function to ensure blue and green configs exist
+ensure_blue_green_configs() {
+    local service_name="$1"
+    local domain="$2"
+    local active_color="${3:-blue}"
+    
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local blue_config="${config_dir}/${domain}.blue.conf"
+    local green_config="${config_dir}/${domain}.green.conf"
+    
+    # Check if both configs exist
+    if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
+        log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $domain"
+        return 0
+    fi
+    
+    # Generate configs if missing
+    log_message "INFO" "$service_name" "config" "ensure" "Generating blue and green configs for $domain"
+    if ! generate_blue_green_configs "$service_name" "$domain" "$active_color"; then
+        log_message "ERROR" "$service_name" "config" "ensure" "Failed to generate configs for $domain"
+        return 1
+    fi
+    
+    return 0
+}
+
+# Function to switch config symlink
+switch_config_symlink() {
+    local domain="$1"
+    local target_color="$2"
+    
+    if [ -z "$domain" ] || [ -z "$target_color" ]; then
+        print_error "switch_config_symlink: domain and target_color are required"
+        return 1
+    fi
+    
+    if [ "$target_color" != "blue" ] && [ "$target_color" != "green" ]; then
+        print_error "switch_config_symlink: target_color must be 'blue' or 'green'"
+        return 1
+    fi
+    
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local symlink_file="${config_dir}/${domain}.conf"
+    local target_file="${config_dir}/${domain}.${target_color}.conf"
+    
+    # Check if target config exists
+    if [ ! -f "$target_file" ]; then
+        print_error "Target config file not found: $target_file"
+        return 1
+    fi
+    
+    # Remove existing symlink or file
+    if [ -L "$symlink_file" ] || [ -f "$symlink_file" ]; then
+        rm -f "$symlink_file"
+    fi
+    
+    # Create new symlink
+    if ln -s "${domain}.${target_color}.conf" "$symlink_file"; then
+        log_message "SUCCESS" "$domain" "$target_color" "symlink" "Symlink switched to $target_color config"
+        return 0
+    else
+        print_error "Failed to create symlink: $symlink_file -> $target_file"
+        return 1
+    fi
 }
 
 # Function to test nginx config for a specific service
@@ -486,7 +734,7 @@ check_docker_compose_available() {
     return 0
 }
 
-# Function to cleanup service nginx config (set to placeholders when containers are stopped)
+# Function to cleanup service nginx config (ensure symlink points to correct color when containers are stopped)
 cleanup_service_nginx_config() {
     local service_name="$1"
     
@@ -498,10 +746,14 @@ cleanup_service_nginx_config() {
         return 0
     fi
     
-    local config_file="${NGINX_PROJECT_DIR}/nginx/conf.d/${domain}.conf"
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local symlink_file="${config_dir}/${domain}.conf"
+    local blue_config="${config_dir}/${domain}.blue.conf"
+    local green_config="${config_dir}/${domain}.green.conf"
     
-    if [ ! -f "$config_file" ]; then
-        log_message "WARNING" "$service_name" "cleanup" "config" "Config file not found: $config_file, skipping cleanup"
+    # Check if blue/green configs exist (service is migrated)
+    if [ ! -f "$blue_config" ] || [ ! -f "$green_config" ]; then
+        log_message "INFO" "$service_name" "cleanup" "config" "Service not migrated to symlink system, skipping config cleanup"
         return 0
     fi
     
@@ -528,21 +780,14 @@ cleanup_service_nginx_config() {
         return 0
     fi
     
-    # Generate config with placeholders (no active color since no containers)
-    # Use "blue" as default, but all upstreams will be placeholders
-    local cleaned_config
-    if ! cleaned_config=$(generate_nginx_config "$service_name" "blue" "$config_file"); then
-        log_message "WARNING" "$service_name" "cleanup" "config" "Failed to generate cleanup config, skipping"
-        return 0
+    # Ensure symlink points to blue (default when no containers running)
+    # This is safe since both configs exist and will have placeholder upstreams
+    if [ ! -L "$symlink_file" ]; then
+        log_message "INFO" "$service_name" "cleanup" "config" "Creating symlink pointing to blue (default)"
+        switch_config_symlink "$domain" "blue" || true
     fi
     
-    # Backup original config
-    cp "$config_file" "${config_file}.backup.cleanup.$(date +%Y%m%d_%H%M%S)"
-    
-    # Write cleaned config
-    echo "$cleaned_config" > "$config_file"
-    
-    log_message "INFO" "$service_name" "cleanup" "config" "Config cleaned up (set to placeholders)"
+    log_message "INFO" "$service_name" "cleanup" "config" "Config cleanup completed (symlink maintained)"
 }
 
 # Function to check HTTPS URL availability

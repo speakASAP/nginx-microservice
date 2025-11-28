@@ -509,12 +509,14 @@ All scripts are in `scripts/blue-green/`:
 
 - `deploy-smart.sh` - **RECOMMENDED**: Full deployment cycle (only rebuilds changed services)
 - `prepare-green-smart.sh` - **RECOMMENDED**: Build and start new deployment (only rebuilds changed services)
-- `deploy.sh` - Full deployment cycle (DEPRECATED: always rebuilds all services, use deploy-smart.sh)
 - `prepare-green.sh` - Build and start new deployment (DEPRECATED: always rebuilds all services, use prepare-green-smart.sh)
-- `switch-traffic.sh` - Switch traffic to new color
+- `switch-traffic.sh` - Switch traffic to new color (uses modern symlink-based switching)
+- `migrate-to-symlinks.sh` - Migrate services to symlink-based blue/green system
 - `health-check.sh` - Check service health
 - `rollback.sh` - Rollback to previous deployment
 - `cleanup.sh` - Remove old deployment
+
+**Note**: The blue/green system uses a modern symlink-based approach where each service has separate blue and green config files (`{domain}.blue.conf` and `{domain}.green.conf`), with a symlink (`{domain}.conf`) pointing to the active environment. This replaces the legacy file-modification approach.
 
 See [Blue/Green Deployment Guide](docs/BLUE_GREEN_DEPLOYMENT.md) for detailed usage.
 

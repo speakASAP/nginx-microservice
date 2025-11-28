@@ -46,20 +46,19 @@ fi
 
 log_message "WARNING" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Rolling back from $ACTIVE_COLOR to $PREVIOUS_COLOR"
 
-# Determine nginx config file
-NGINX_CONF_DIR="${NGINX_PROJECT_DIR}/nginx/conf.d"
-CONFIG_FILE="${NGINX_CONF_DIR}/${DOMAIN}.conf"
+# Ensure blue and green configs exist
+log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Ensuring blue and green configs exist"
 
-if [ ! -f "$CONFIG_FILE" ]; then
-    print_error "Nginx config file not found: $CONFIG_FILE"
+if ! ensure_blue_green_configs "$SERVICE_NAME" "$DOMAIN" "$PREVIOUS_COLOR"; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Failed to ensure configs exist"
     exit 1
 fi
 
-# Update nginx upstream blocks to previous color
-log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Updating nginx configuration to $PREVIOUS_COLOR"
+# Switch symlink to previous color
+log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Switching symlink to $PREVIOUS_COLOR config"
 
-if ! update_nginx_upstream "$CONFIG_FILE" "$SERVICE_NAME" "$PREVIOUS_COLOR"; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Failed to update nginx configuration"
+if ! switch_config_symlink "$DOMAIN" "$PREVIOUS_COLOR"; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Failed to switch symlink"
     exit 1
 fi
 
