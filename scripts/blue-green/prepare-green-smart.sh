@@ -301,7 +301,7 @@ while IFS= read -r service; do
     # But we still need to check if it's mapped to host
     if [ -z "$host_port" ] && [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
         # Check docker ps output to see if any container has this port mapped
-        local mapped_port=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+        mapped_port=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
             grep -E ":${PORT}->|:${PORT}/" | \
             sed -E 's/.*:([0-9]+)->.*/\1/' | head -1 || echo "")
         
