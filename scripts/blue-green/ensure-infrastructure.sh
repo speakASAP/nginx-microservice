@@ -88,6 +88,64 @@ if [ "$POSTGRES_RUNNING" = false ] || [ "$REDIS_RUNNING" = false ]; then
         exit 1
     fi
     
+    # Check and kill processes using infrastructure ports before starting
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "port-check" "Checking for port conflicts on infrastructure ports"
+    
+    # Get ports from docker-compose file or use defaults
+    local postgres_port="${POSTGRES_PORT:-5432}"
+    local redis_port="${REDIS_PORT:-6379}"
+    
+    # Try to extract ports from compose file
+    if [ -f "$INFRASTRUCTURE_COMPOSE" ]; then
+        local compose_config=$(docker compose -f "$INFRASTRUCTURE_COMPOSE" config 2>/dev/null || echo "")
+        if [ -n "$compose_config" ]; then
+            # Extract postgres port
+            local pg_port_line=$(echo "$compose_config" | grep -A 10 "^  postgres:" | grep -E "^\s+-.*:.*:" | head -1 || echo "")
+            if [ -n "$pg_port_line" ]; then
+                postgres_port=$(echo "$pg_port_line" | sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | sed -E 's/.*"([0-9]+):([0-9]+)".*/\1/' | grep -oE '^[0-9]+' | head -1 || echo "5432")
+            fi
+            
+            # Extract redis port
+            local redis_port_line=$(echo "$compose_config" | grep -A 10 "^  redis:" | grep -E "^\s+-.*:.*:" | head -1 || echo "")
+            if [ -n "$redis_port_line" ]; then
+                redis_port=$(echo "$redis_port_line" | sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | sed -E 's/.*"([0-9]+):([0-9]+)".*/\1/' | grep -oE '^[0-9]+' | head -1 || echo "6379")
+            fi
+        fi
+    fi
+    
+    # Kill processes using these ports
+    if type kill_port_if_in_use >/dev/null 2>&1; then
+        if [ "$POSTGRES_RUNNING" = false ]; then
+            kill_port_if_in_use "$postgres_port" "$SERVICE_NAME" "infrastructure"
+        fi
+        if [ "$REDIS_RUNNING" = false ]; then
+            kill_port_if_in_use "$redis_port" "$SERVICE_NAME" "infrastructure"
+        fi
+    else
+        # Fallback: manual port checking
+        if [ "$POSTGRES_RUNNING" = false ]; then
+            local pg_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+                grep -E ":${postgres_port}->|:${postgres_port}/|127\.0\.0\.1:${postgres_port}:" | \
+                awk '{print $1}' | grep -v "postgres\|db-server" | head -1 || echo "")
+            if [ -n "$pg_container" ]; then
+                log_message "WARNING" "$SERVICE_NAME" "infrastructure" "port-check" "Port ${postgres_port} is in use by container ${pg_container}, stopping it"
+                docker stop "${pg_container}" 2>/dev/null || true
+                docker rm -f "${pg_container}" 2>/dev/null || true
+            fi
+        fi
+        
+        if [ "$REDIS_RUNNING" = false ]; then
+            local redis_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+                grep -E ":${redis_port}->|:${redis_port}/|127\.0\.0\.1:${redis_port}:" | \
+                awk '{print $1}' | grep -v "redis\|db-server" | head -1 || echo "")
+            if [ -n "$redis_container" ]; then
+                log_message "WARNING" "$SERVICE_NAME" "infrastructure" "port-check" "Port ${redis_port} is in use by container ${redis_container}, stopping it"
+                docker stop "${redis_container}" 2>/dev/null || true
+                docker rm -f "${redis_container}" 2>/dev/null || true
+            fi
+        fi
+    fi
+    
     # Start infrastructure
     if ! docker compose -f "$INFRASTRUCTURE_COMPOSE" -p "$INFRASTRUCTURE_PROJECT" up -d; then
         log_message "ERROR" "$SERVICE_NAME" "infrastructure" "start" "Failed to start infrastructure"

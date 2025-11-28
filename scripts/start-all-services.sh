@@ -149,12 +149,60 @@ start_nginx_microservice() {
     cd "$NGINX_PROJECT_DIR"
     print_detail "Working directory: $(pwd)"
     
-    # Check if nginx is already running
+    # Check if nginx is already running and healthy
     if container_running "nginx-microservice"; then
-        print_success "nginx-microservice is ${GREEN_CHECK} already running"
-        print_detail "Container status:"
-        docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-        return 0
+        local nginx_status=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" | head -1 || echo "")
+        if echo "$nginx_status" | grep -qE "Restarting"; then
+            print_warning "nginx-microservice is restarting, will kill and restart it"
+        else
+            print_success "nginx-microservice is ${GREEN_CHECK} already running"
+            print_detail "Container status:"
+            docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
+            return 0
+        fi
+    fi
+    
+    # Check and kill processes using ports 80 and 443 before starting
+    print_status "Checking for port conflicts on ports 80 and 443..."
+    if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
+        source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
+        if type kill_port_if_in_use >/dev/null 2>&1; then
+            kill_port_if_in_use "80" "nginx-microservice" "infrastructure"
+            kill_port_if_in_use "443" "nginx-microservice" "infrastructure"
+        fi
+        # Also kill any existing nginx containers that might be restarting
+        if type kill_container_if_exists >/dev/null 2>&1; then
+            kill_container_if_exists "nginx-microservice" "nginx-microservice" "infrastructure"
+            kill_container_if_exists "nginx-certbot" "nginx-microservice" "infrastructure"
+        fi
+    fi
+    
+    # Fallback: manual port checking if utils.sh not available
+    if ! type kill_port_if_in_use >/dev/null 2>&1; then
+        # Check for containers using ports 80 or 443
+        local port80_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":80->|:80/|0\.0\.0\.0:80:" | awk '{print $1}' | head -1 || echo "")
+        local port443_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":443->|:443/|0\.0\.0\.0:443:" | awk '{print $1}' | head -1 || echo "")
+        
+        if [ -n "$port80_container" ] && [ "$port80_container" != "nginx-microservice" ]; then
+            print_warning "Port 80 is in use by container ${port80_container}, stopping it"
+            docker stop "${port80_container}" 2>/dev/null || true
+            docker kill "${port80_container}" 2>/dev/null || true
+            docker rm -f "${port80_container}" 2>/dev/null || true
+        fi
+        
+        if [ -n "$port443_container" ] && [ "$port443_container" != "nginx-microservice" ]; then
+            print_warning "Port 443 is in use by container ${port443_container}, stopping it"
+            docker stop "${port443_container}" 2>/dev/null || true
+            docker kill "${port443_container}" 2>/dev/null || true
+            docker rm -f "${port443_container}" 2>/dev/null || true
+        fi
+        
+        # Also kill any existing nginx containers
+        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$|^nginx-certbot$"; then
+            print_warning "Killing existing nginx containers"
+            docker kill nginx-microservice nginx-certbot 2>/dev/null || true
+            docker rm -f nginx-microservice nginx-certbot 2>/dev/null || true
+        fi
     fi
     
     # Start nginx
@@ -209,8 +257,29 @@ start_nginx_microservice() {
 start_database_server() {
     print_status "Starting database-server..."
     
-    # Check if database-server is already running
-    if container_running "db-server-postgres" && container_running "db-server-redis"; then
+    # Check if database-server is already running and healthy
+    local postgres_running=false
+    local redis_running=false
+    
+    if container_running "db-server-postgres"; then
+        local pg_status=$(docker ps --filter "name=db-server-postgres" --format "{{.Status}}" | head -1 || echo "")
+        if echo "$pg_status" | grep -qE "Restarting"; then
+            print_warning "db-server-postgres is restarting, will kill and restart it"
+        else
+            postgres_running=true
+        fi
+    fi
+    
+    if container_running "db-server-redis"; then
+        local redis_status=$(docker ps --filter "name=db-server-redis" --format "{{.Status}}" | head -1 || echo "")
+        if echo "$redis_status" | grep -qE "Restarting"; then
+            print_warning "db-server-redis is restarting, will kill and restart it"
+        else
+            redis_running=true
+        fi
+    fi
+    
+    if [ "$postgres_running" = true ] && [ "$redis_running" = true ]; then
         print_success "database-server is ${GREEN_CHECK} already running"
         print_detail "Container status:"
         docker ps --filter "name=db-server" --format "  - {{.Names}}: {{.Status}}" 2>&1 || true
@@ -225,6 +294,61 @@ start_database_server() {
     
     cd /home/statex/database-server
     print_detail "Working directory: $(pwd)"
+    
+    # Check and kill processes using database ports before starting
+    print_status "Checking for port conflicts on database ports..."
+    
+    # Get ports from docker-compose file or use defaults
+    local postgres_port="${DB_SERVER_PORT:-5432}"
+    local redis_port="${REDIS_SERVER_PORT:-6379}"
+    
+    if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
+        source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
+        if type kill_port_if_in_use >/dev/null 2>&1; then
+            kill_port_if_in_use "$postgres_port" "database-server" "infrastructure"
+            kill_port_if_in_use "$redis_port" "database-server" "infrastructure"
+        fi
+    fi
+    
+    # Also kill any existing database containers that might be restarting
+    if type kill_container_if_exists >/dev/null 2>&1; then
+        kill_container_if_exists "db-server-postgres" "database-server" "infrastructure"
+        kill_container_if_exists "db-server-redis" "database-server" "infrastructure"
+    fi
+    
+    # Fallback: manual port checking if utils.sh not available
+    if ! type kill_port_if_in_use >/dev/null 2>&1; then
+        # Check for containers using postgres port
+        local pg_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+            grep -E ":${postgres_port}->|:${postgres_port}/|127\.0\.0\.1:${postgres_port}:" | \
+            awk '{print $1}' | grep -v "db-server-postgres" | head -1 || echo "")
+        
+        if [ -n "$pg_container" ]; then
+            print_warning "Port ${postgres_port} is in use by container ${pg_container}, stopping it"
+            docker stop "${pg_container}" 2>/dev/null || true
+            docker kill "${pg_container}" 2>/dev/null || true
+            docker rm -f "${pg_container}" 2>/dev/null || true
+        fi
+        
+        # Check for containers using redis port
+        local redis_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+            grep -E ":${redis_port}->|:${redis_port}/|127\.0\.0\.1:${redis_port}:" | \
+            awk '{print $1}' | grep -v "db-server-redis" | head -1 || echo "")
+        
+        if [ -n "$redis_container" ]; then
+            print_warning "Port ${redis_port} is in use by container ${redis_container}, stopping it"
+            docker stop "${redis_container}" 2>/dev/null || true
+            docker kill "${redis_container}" 2>/dev/null || true
+            docker rm -f "${redis_container}" 2>/dev/null || true
+        fi
+        
+        # Also kill any existing database containers
+        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^db-server-postgres$|^db-server-redis$"; then
+            print_warning "Killing existing database containers"
+            docker kill db-server-postgres db-server-redis 2>/dev/null || true
+            docker rm -f db-server-postgres db-server-redis 2>/dev/null || true
+        fi
+    fi
     
     # Start database-server
     print_detail "Executing: docker compose up -d"

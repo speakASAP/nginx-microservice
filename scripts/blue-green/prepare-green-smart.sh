@@ -238,31 +238,87 @@ while IFS= read -r service; do
         ACTUAL_CONTAINER_NAME="${PROJECT_NAME}-${service}"
     fi
     
-    # Check for actual container name that will be created
-    if docker ps -a --format "{{.Names}}" | grep -qE "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$"; then
-        EXISTING_CONTAINER=$(docker ps -a --format "{{.Names}}" | grep -E "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$" | head -1)
-        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Found existing container ${EXISTING_CONTAINER}"
-        
-        if docker ps --format "{{.Names}}" | grep -qE "^${EXISTING_CONTAINER}$"; then
-            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} is running, stopping and removing it"
-            docker stop "${EXISTING_CONTAINER}" 2>/dev/null || true
-            docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
-        else
-            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} exists but not running, removing it"
-            docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
+    # Check for actual container name that will be created and kill if exists (handles restarting containers)
+    if type kill_container_if_exists >/dev/null 2>&1; then
+        # Check all possible container name variations
+        kill_container_if_exists "${ACTUAL_CONTAINER_NAME}" "$SERVICE_NAME" "$PREPARE_COLOR"
+        kill_container_if_exists "${CONTAINER_NAME}" "$SERVICE_NAME" "$PREPARE_COLOR"
+        if [ -n "$CONTAINER_BASE" ] && [ "$CONTAINER_BASE" != "null" ]; then
+            kill_container_if_exists "${CONTAINER_BASE}" "$SERVICE_NAME" "$PREPARE_COLOR"
+        fi
+    else
+        # Fallback: manual container checking
+        if docker ps -a --format "{{.Names}}" | grep -qE "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$"; then
+            EXISTING_CONTAINER=$(docker ps -a --format "{{.Names}}" | grep -E "^${ACTUAL_CONTAINER_NAME}$|^${CONTAINER_BASE}$|^${CONTAINER_NAME}$" | head -1)
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Found existing container ${EXISTING_CONTAINER}"
+            
+            # Check if it's restarting
+            local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${EXISTING_CONTAINER}" | awk '{print $2}' || echo "")
+            if [ -n "$status" ] && echo "$status" | grep -qE "Restarting"; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} is restarting, force killing it"
+                docker kill "${EXISTING_CONTAINER}" 2>/dev/null || true
+                sleep 1
+            fi
+            
+            if docker ps --format "{{.Names}}" | grep -qE "^${EXISTING_CONTAINER}$"; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} is running, stopping and removing it"
+                docker stop "${EXISTING_CONTAINER}" 2>/dev/null || true
+                docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
+            else
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container ${EXISTING_CONTAINER} exists but not running, removing it"
+                docker rm -f "${EXISTING_CONTAINER}" 2>/dev/null || true
+            fi
         fi
     fi
     
-    # Check for port conflicts
+    # Check for port conflicts - get host port from docker-compose file
     PORT=$(echo "$REGISTRY" | jq -r ".services.${service}.port // empty" 2>/dev/null || echo "")
-    if [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
-        # Check if port is in use
-        PORT_IN_USE=$(docker ps --format "{{.Names}}\t{{.Ports}}" | grep -E ":${PORT}->|:${PORT}/" | grep -v "^${EXISTING_CONTAINER}" | head -1 || echo "")
-        if [ -n "$PORT_IN_USE" ]; then
-            CONFLICT_CONTAINER=$(echo "$PORT_IN_USE" | awk '{print $1}')
-            log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Port ${PORT} is in use by container ${CONFLICT_CONTAINER}, stopping it"
-            docker stop "${CONFLICT_CONTAINER}" 2>/dev/null || true
-            docker rm -f "${CONFLICT_CONTAINER}" 2>/dev/null || true
+    
+    # Try to get actual host port from docker-compose file
+    local host_port=""
+    if [ -f "$COMPOSE_FILE" ]; then
+        # Extract host port mapping from compose file for this service
+        local port_mapping=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null | \
+            grep -A 20 "^  ${service}:" | grep -E "^\s+-.*:.*:" | head -1 | \
+            sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | \
+            sed -E 's/.*"([0-9]+):([0-9]+)".*/\1/' | \
+            grep -oE '^[0-9]+' | head -1 || echo "")
+        
+        if [ -n "$port_mapping" ]; then
+            host_port="$port_mapping"
+        fi
+    fi
+    
+    # If we couldn't get host port from compose, use the registry port (internal port)
+    # But we still need to check if it's mapped to host
+    if [ -z "$host_port" ] && [ -n "$PORT" ] && [ "$PORT" != "null" ]; then
+        # Check docker ps output to see if any container has this port mapped
+        local mapped_port=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+            grep -E ":${PORT}->|:${PORT}/" | \
+            sed -E 's/.*:([0-9]+)->.*/\1/' | head -1 || echo "")
+        
+        if [ -n "$mapped_port" ]; then
+            host_port="$mapped_port"
+        else
+            # Use registry port as fallback (might be internal only)
+            host_port="$PORT"
+        fi
+    fi
+    
+    # Kill any process/container using the port
+    if [ -n "$host_port" ] && [ "$host_port" != "null" ]; then
+        if type kill_port_if_in_use >/dev/null 2>&1; then
+            kill_port_if_in_use "$host_port" "$SERVICE_NAME" "$PREPARE_COLOR"
+        else
+            # Fallback: check if port is in use by docker container
+            PORT_IN_USE=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
+                grep -E ":${host_port}->|:${host_port}/|0\.0\.0\.0:${host_port}:|127\.0\.0\.1:${host_port}:" | \
+                grep -v "^${EXISTING_CONTAINER}" | awk '{print $1}' | head -1 || echo "")
+            if [ -n "$PORT_IN_USE" ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Port ${host_port} is in use by container ${PORT_IN_USE}, stopping it"
+                docker stop "${PORT_IN_USE}" 2>/dev/null || true
+                docker rm -f "${PORT_IN_USE}" 2>/dev/null || true
+            fi
         fi
     fi
 done <<< "$SERVICES"
