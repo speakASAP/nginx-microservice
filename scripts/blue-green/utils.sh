@@ -597,6 +597,9 @@ switch_config_symlink() {
         return 1
     fi
     
+    # Clean up upstreams for non-existent containers before switching
+    cleanup_upstreams "$target_file"
+    
     # Remove existing symlink or file
     if [ -L "$symlink_file" ] || [ -f "$symlink_file" ]; then
         rm -f "$symlink_file"
