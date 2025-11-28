@@ -210,51 +210,36 @@ generate_upstream_blocks() {
             green_backup=""
         fi
         
-        # Check if containers exist before creating upstream block
+        # Always generate both blue and green servers in upstream blocks
+        # This ensures nginx config is valid even if containers don't exist yet
+        # Containers will be started later, and nginx will connect when they're ready
         local blue_container="${container_base}-blue"
         local green_container="${container_base}-green"
-        local blue_exists=false
-        local green_exists=false
         
-        # Check if containers exist (check both running and stopped containers)
-        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${blue_container}$"; then
-            blue_exists=true
-        fi
-        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${green_container}$"; then
-            green_exists=true
+        # Build upstream block (always create, even if containers don't exist yet)
+        upstream_blocks="${upstream_blocks}upstream ${container_base} {
+"
+        
+        # Always add blue server (active or backup based on active_color)
+        if [ -n "$blue_weight" ]; then
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+"
+        else
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+"
         fi
         
-        # Only create upstream block if at least one container exists
-        if [ "$blue_exists" = "true" ] || [ "$green_exists" = "true" ]; then
-            # Build upstream block
-            upstream_blocks="${upstream_blocks}upstream ${container_base} {
+        # Always add green server (active or backup based on active_color)
+        if [ -n "$green_weight" ]; then
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
 "
-            
-            # Add blue server only if it exists
-            if [ "$blue_exists" = "true" ]; then
-                if [ -n "$blue_weight" ]; then
-                    upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
-"
-                else
-                    upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
-"
-                fi
-            fi
-            
-            # Add green server only if it exists
-            if [ "$green_exists" = "true" ]; then
-                if [ -n "$green_weight" ]; then
-                    upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
-"
-                else
-                    upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
-"
-                fi
-            fi
-            
-            upstream_blocks="${upstream_blocks}}
+        else
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
 "
         fi
+        
+        upstream_blocks="${upstream_blocks}}
+"
     done <<< "$service_keys"
     
     echo "$upstream_blocks"
