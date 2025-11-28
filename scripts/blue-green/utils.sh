@@ -214,22 +214,40 @@ generate_upstream_blocks() {
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
         
-        # Add blue server
-        if [ -n "$blue_weight" ]; then
-            upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
-"
-        else
-            upstream_blocks="${upstream_blocks}    server ${container_base}-blue:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
-"
+        # Check if containers exist before adding to upstream
+        local blue_container="${container_base}-blue"
+        local green_container="${container_base}-green"
+        local blue_exists=false
+        local green_exists=false
+        
+        # Check if containers exist (check both running and stopped containers)
+        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${blue_container}$"; then
+            blue_exists=true
+        fi
+        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${green_container}$"; then
+            green_exists=true
         fi
         
-        # Add green server
-        if [ -n "$green_weight" ]; then
-            upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+        # Add blue server only if it exists
+        if [ "$blue_exists" = "true" ]; then
+            if [ -n "$blue_weight" ]; then
+                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-        else
-            upstream_blocks="${upstream_blocks}    server ${container_base}-green:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+            else
+                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
 "
+            fi
+        fi
+        
+        # Add green server only if it exists
+        if [ "$green_exists" = "true" ]; then
+            if [ -n "$green_weight" ]; then
+                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+"
+            else
+                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+"
+            fi
         fi
         
         upstream_blocks="${upstream_blocks}}

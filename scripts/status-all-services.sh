@@ -58,12 +58,10 @@ MICROSERVICES=(
     "auth-microservice"
     "payment-microservice"
     "notifications-microservice"
-    "crypto-ai-agent"
 )
 
 APPLICATIONS=(
-    "statex-platform"
-    "statex-ai"
+    "crypto-ai-agent"
     "statex"
     "e-commerce"
 )

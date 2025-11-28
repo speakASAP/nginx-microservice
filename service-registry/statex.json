@@ -14,14 +14,6 @@
       "health_retries": 3,
       "startup_time": 40
     },
-    "backend": {
-      "container_name_base": "statex-submission-service",
-      "port": 8000,
-      "health_endpoint": "/health",
-      "health_timeout": 5,
-      "health_retries": 3,
-      "startup_time": 30
-    },
     "submission-service": {
       "container_name_base": "statex-submission-service",
       "port": 8000,
@@ -45,6 +37,22 @@
       "health_timeout": 5,
       "health_retries": 3,
       "startup_time": 30
+    },
+    "ai-orchestrator": {
+      "container_name_base": "statex-ai-orchestrator",
+      "port": 8000,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 40
+    },
+    "api-gateway": {
+      "container_name_base": "statex-api-gateway",
+      "port": 80,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 20
     }
   },
   "shared_services": [

@@ -82,25 +82,23 @@ done
 # Service categories and startup order
 # Infrastructure services (no dependencies)
 INFRASTRUCTURE_SERVICES=(
-    "nginx-microservice"
-    "database-server"
+    "nginx-microservice"         # Reverse proxy for all services
+    "database-server"            # postgres + redis, needed for all services
 )
 
 # Microservices (depend only on infrastructure)
 MICROSERVICES=(
-    "logging-microservice"      # No dependencies
-    "auth-microservice"         # Needs postgres
-    "payment-microservice"      # Needs postgres
+    "logging-microservice"       # No dependencies
+    "auth-microservice"          # Needs postgres
+    "payment-microservice"       # Needs postgres
     "notifications-microservice" # Needs postgres + redis
-    "crypto-ai-agent"           # Needs postgres + redis
 )
 
 # Applications (may depend on microservices)
 APPLICATIONS=(
-    "statex-platform"           # API gateway, needs postgres + redis
-    "statex-ai"                 # Needs postgres + redis
-    "statex"                    # Main application, needs postgres + redis
-    "e-commerce"                # Heavy application, needs postgres + redis
+    "crypto-ai-agent"            # Needs postgres + redis
+    "statex"                     # Needs postgres + redis
+    "e-commerce"                 # Needs postgres + redis
 )
 
 # Function to check if service registry exists

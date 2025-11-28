@@ -72,11 +72,15 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Port**: 8005
 - **Health Endpoint**: `/health`
 
+### 3. Applications (May Depend on Microservices)
+
+These applications may depend on microservices and should be started after all microservices are running:
+
 #### crypto-ai-agent
 
 - **Purpose**: Crypto AI agent application
 - **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
-- **Startup Order**: 7
+- **Startup Order**: 8
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
   - `crypto-ai-backend-blue` / `crypto-ai-backend-green` (Port: 8100)
@@ -85,42 +89,19 @@ These services depend only on infrastructure (nginx-network, database-server) an
   - Backend: `/health`
   - Frontend: `/`
 
-### 3. Applications (May Depend on Microservices)
-
-These applications may depend on microservices and should be started after all microservices are running:
-
-#### statex-platform
-
-- **Purpose**: Statex API gateway
-- **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
-- **Startup Order**: 8
-- **Shared Services**: `postgres`, `redis`
-- **Container**: `statex-api-gateway-blue` / `statex-api-gateway-green`
-- **Port**: 80
-- **Health Endpoint**: `/health`
-- **May Depend On**: `auth-microservice` (for authentication)
-
-#### statex-ai
-
-- **Purpose**: AI orchestrator service
-- **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
-- **Startup Order**: 9
-- **Shared Services**: `postgres`, `redis`
-- **Container**: `statex-ai-orchestrator-blue` / `statex-ai-orchestrator-green`
-- **Port**: 8000
-- **Health Endpoint**: `/health`
-
 #### statex
 
-- **Purpose**: Main statex platform application
+- **Purpose**: Main statex platform application (consolidated service including all statex components)
 - **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
-- **Startup Order**: 10
+- **Startup Order**: 9
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
   - `statex-frontend-blue` / `statex-frontend-green` (Port: 3000)
   - `statex-submission-service-blue` / `statex-submission-service-green` (Port: 8000)
   - `statex-user-portal-blue` / `statex-user-portal-green` (Port: 8000)
   - `statex-content-service-blue` / `statex-content-service-green` (Port: 8000)
+  - `statex-ai-orchestrator-blue` / `statex-ai-orchestrator-green` (Port: 8000) - AI orchestrator service
+  - `statex-api-gateway-blue` / `statex-api-gateway-green` (Port: 80) - API gateway
 - **Health Endpoints**:
   - Frontend: `/`
   - Services: `/health`
@@ -130,7 +111,7 @@ These applications may depend on microservices and should be started after all m
 
 - **Purpose**: E-commerce platform (heavy application with 10+ internal services)
 - **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
-- **Startup Order**: 11 (start last due to complexity and startup time)
+- **Startup Order**: 10 (start last due to complexity and startup time)
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
   - `e-commerce-frontend-blue` / `e-commerce-frontend-green` (Port: 3000)
@@ -148,41 +129,49 @@ These applications may depend on microservices and should be started after all m
 │  nginx-network      │ (Docker network)
 └──────────┬──────────┘
            │
-           ├─────────────────────────────────────────────┐
-           │                                             │
-┌──────────▼──────────┐                    ┌─────────────▼─────────────┐
-│ nginx-microservice  │                    │   database-server         │
-│  (Reverse Proxy)    │                    │   - db-server-postgres    │
-└─────────────────────┘                    │   - db-server-redis       │
-                                           └───────────────────────────┘
+           ├───────────────────────────────────────────┐
+           │                                           │
+┌──────────▼──────────┐                  ┌─────────────▼─────────────┐
+│ nginx-microservice  │                  │   database-server         │
+│  (Reverse Proxy)    │                  │   - db-server-postgres    │
+└─────────────────────┘                  │   - db-server-redis       │
+                                         └───────────────────────────┘
                                                       │
            ┌──────────────────────────────────────────┼──────────────────────────┐
            │                                          │                          │
            │                                          │                          │
-┌──────────▼──────────┐                    ┌─────────▼──────────┐    ┌──────────▼──────────┐
-│ logging-microservice│                    │ auth-microservice  │    │ payment-microservice│
-│ (No DB)             │                    │ (needs postgres)   │    │ (needs postgres)    │
-└─────────────────────┘                    └────────────────────┘    └─────────────────────┘
+┌──────────▼──────────┐                    ┌──────────▼──────────┐    ┌──────────▼──────────┐
+│ logging-microservice│                    │  auth-microservice  │    │ payment-microservice│
+│ (No DB)             │                    │  (needs postgres)   │    │ (needs postgres)    │
+└─────────────────────┘                    └─────────────────────┘    └─────────────────────┘
+           │                                          │                          │
+           └──────────────────────────────────────────┼──────────────────────────┘
                                                       │
-           ┌──────────────────────────────────────────┼─────────────────────────┐
-           │                                          │                         │
-           │                                          │                         │
-┌──────────▼──────────┐                    ┌──────────▼──────────┐    ┌─────────▼──────────┐
-│notifications-       │                    │  crypto-ai-agent    │    │  statex-platform   │
-│microservice         │                    │  (needs postgres +  │    │  (needs postgres + │
-│(needs postgres +    │                    │  redis)             │    │  redis)            │
-│redis)               │                    └─────────────────────┘    └────────────────────┘
-└─────────────────────┘
+                                                      │
+                                                      │
+                                           ┌──────────▼──────────┐
+                                           │notifications-       │
+                                           │microservice         │
+                                           │(needs postgres +    │
+                                           │redis)               │
+                                           └─────────────────────┘
                                                       │
            ┌──────────────────────────────────────────┼────────────────────────┐
            │                                          │                        │
            │                                          │                        │
-┌──────────▼──────────┐                    ┌──────────▼───────────┐    ┌───────▼───────────┐
-│      statex         │                    │     statex-ai        │    │    e-commerce     │
-│  (needs postgres +  │                    │  (needs postgres +   │    │  (needs postgres +│
-│  redis, may need    │                    │  redis)              │    │  redis, heavy app)│
-│  auth + notif)      │                    └──────────────────────┘    └───────────────────┘
-└─────────────────────┘
+┌──────────▼──────────┐                    ┌──────────▼──────────┐    ┌───────▼───────────┐
+│  crypto-ai-agent    │                    │      statex         │    │    e-commerce     │
+│  (needs postgres +  │                    │  (consolidated:     │    │  (needs postgres +│
+│  redis)             │                    │  frontend,          │    │  redis)           │
+└─────────────────────┘                    │  submission,        │    └───────────────────┘
+                                           │  user-portal,       │
+                                           │  content-service,   │
+                                           │  ai-orchestrator,   │
+                                           │  api-gateway)       │
+                                           │  (needs postgres +  │
+                                           │  redis, may need    │
+                                           │  auth + notif)      │
+                                           └─────────────────────┘
 ```
 
 ## Startup Sequence
@@ -194,20 +183,18 @@ These applications may depend on microservices and should be started after all m
 3. Start `database-server` (postgres + redis)
 4. Wait for infrastructure health checks
 
-### Phase 2: Microservices (Order: 3-7)
+### Phase 2: Microservices (Order: 3-6)
 
 1. Start `logging-microservice` (no dependencies)
 2. Start `auth-microservice` (needs postgres)
 3. Start `payment-microservice` (needs postgres)
 4. Start `notifications-microservice` (needs postgres + redis)
-5. Start `crypto-ai-agent` (needs postgres + redis)
 
-### Phase 3: Applications (Order: 8-11)
+### Phase 3: Applications (Order: 7-10)
 
-1. Start `statex-platform` (API gateway)
-2. Start `statex-ai` (AI orchestrator)
-3. Start `statex` (main application)
-4. Start `e-commerce` (heavy application, start last)
+1. Start `crypto-ai-agent` (needs postgres + redis)
+2. Start `statex` (main application - includes frontend, submission-service, user-portal, content-service, ai-orchestrator, api-gateway)
+3. Start `e-commerce` (heavy application, start last)
 
 ## Using the Central Startup Script
 

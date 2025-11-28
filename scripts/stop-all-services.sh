@@ -49,13 +49,11 @@ print_detail() {
 # Service categories (reverse order of startup)
 APPLICATIONS=(
     "e-commerce"
-    "statex"
-    "statex-ai"
-    "statex-platform"
+    "statex"                     # Includes frontend, submission-service, user-portal, content-service, ai-orchestrator, api-gateway
+    "crypto-ai-agent"
 )
 
 MICROSERVICES=(
-    "crypto-ai-agent"
     "notifications-microservice"
     "payment-microservice"
     "auth-microservice"

@@ -468,8 +468,8 @@ All services have dependencies that must be respected when starting the system. 
 **Startup Order:**
 
 1. **Infrastructure**: nginx-microservice → database-server
-2. **Microservices**: logging-microservice → auth-microservice → payment-microservice → notifications-microservice → crypto-ai-agent
-3. **Applications**: statex-platform → statex-ai → statex → e-commerce
+2. **Microservices**: logging-microservice → auth-microservice → payment-microservice → notifications-microservice
+3. **Applications**: crypto-ai-agent → statex → e-commerce
 
 ### Services Quick Start
 
