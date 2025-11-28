@@ -59,7 +59,7 @@ if docker ps -a --format "{{.ID}}\t{{.Names}}\t{{.Status}}" 2>/dev/null | grep -
     echo ""
     
     # Get detailed status
-    local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -E "^${CONTAINER_NAME}" | awk '{print $2}' || echo "")
+    status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -E "^${CONTAINER_NAME}" | awk '{print $2}' || echo "")
     if [ -n "$status" ]; then
         if echo "$status" | grep -qE "Restarting"; then
             print_error "Container is in RESTARTING state - this indicates a restart loop"
@@ -94,7 +94,7 @@ print_header "3. Nginx Configuration Test"
 print_info "Attempting to test nginx configuration..."
 
 # First, check if container is restarting
-local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -E "^${CONTAINER_NAME}" | awk '{print $2}' || echo "")
+status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -E "^${CONTAINER_NAME}" | awk '{print $2}' || echo "")
 if [ -n "$status" ] && echo "$status" | grep -qE "Restarting"; then
     print_warning "Container is restarting, cannot exec into it"
     print_info "Stopping container temporarily to test config..."
@@ -131,8 +131,8 @@ echo ""
 print_header "4. Port Conflicts"
 print_info "Checking for processes using ports 80 and 443..."
 
-local port80_usage=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":80->|:80/|0\.0\.0\.0:80:" | grep -v "$CONTAINER_NAME" || echo "")
-local port443_usage=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":443->|:443/|0\.0\.0\.0:443:" | grep -v "$CONTAINER_NAME" || echo "")
+port80_usage=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":80->|:80/|0\.0\.0\.0:80:" | grep -v "$CONTAINER_NAME" || echo "")
+port443_usage=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":443->|:443/|0\.0\.0\.0:443:" | grep -v "$CONTAINER_NAME" || echo "")
 
 if [ -n "$port80_usage" ]; then
     print_warning "Port 80 is in use by other containers:"
