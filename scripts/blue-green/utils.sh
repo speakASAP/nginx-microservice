@@ -571,6 +571,57 @@ ensure_blue_green_configs() {
     return 0
 }
 
+# Function to clean up upstreams for non-existent containers in a config file
+cleanup_upstreams() {
+    local config_file="$1"
+    
+    if [ ! -f "$config_file" ]; then
+        return 1
+    fi
+    
+    # Extract all upstream server lines and check if containers exist
+    local temp_config=$(mktemp)
+    local in_upstream=false
+    local upstream_name=""
+    
+    while IFS= read -r line; do
+        # Detect upstream block start
+        if echo "$line" | grep -qE "^upstream\s+\S+\s*\{$"; then
+            upstream_name=$(echo "$line" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/')
+            in_upstream=true
+            echo "$line" >> "$temp_config"
+            continue
+        fi
+        
+        # Detect upstream block end
+        if [ "$in_upstream" = "true" ] && echo "$line" | grep -qE "^\s*\}$"; then
+            in_upstream=false
+            echo "$line" >> "$temp_config"
+            continue
+        fi
+        
+        # Process server lines within upstream block
+        if [ "$in_upstream" = "true" ] && echo "$line" | grep -qE "^\s*server\s+"; then
+            # Extract container name from server line (format: container-name:port)
+            local container_name=$(echo "$line" | sed -E 's/^\s*server\s+([^:]+):.*/\1/')
+            
+            # Check if container exists (running or stopped)
+            if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${container_name}$"; then
+                echo "$line" >> "$temp_config"
+            else
+                # Skip this server line (container doesn't exist)
+                log_message "INFO" "cleanup" "upstream" "Removing non-existent upstream server: $container_name" 2>/dev/null || true
+            fi
+        else
+            # Not an upstream block or server line, keep as-is
+            echo "$line" >> "$temp_config"
+        fi
+    done < "$config_file"
+    
+    # Replace original file with cleaned version
+    mv "$temp_config" "$config_file"
+}
+
 # Function to switch config symlink
 switch_config_symlink() {
     local domain="$1"
