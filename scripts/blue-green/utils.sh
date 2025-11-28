@@ -273,24 +273,7 @@ generate_proxy_locations() {
         proxy_locations="${proxy_locations}    # Frontend routes - using upstream
     location / {
         proxy_pass http://${frontend_container};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        # Timeouts
-        proxy_connect_timeout 300s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        
-        # Buffer settings
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
+        include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
 "
@@ -299,24 +282,7 @@ generate_proxy_locations() {
         proxy_locations="${proxy_locations}    # Backend-only service - root path routes to backend
     location / {
         proxy_pass http://${backend_container};
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        # Timeouts
-        proxy_connect_timeout 300s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        
-        # Buffer settings
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
+        include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
 "
@@ -329,38 +295,13 @@ generate_proxy_locations() {
         limit_req zone=api burst=20 nodelay;
         
         proxy_pass http://${backend_container}/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        proxy_connect_timeout 300s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
+        include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
     # WebSocket support - using upstream
     location /ws {
         proxy_pass http://${backend_container}/ws;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection upgrade;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        
-        proxy_connect_timeout 300s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
+        include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
     # Health check endpoint - using upstream
@@ -385,22 +326,7 @@ generate_proxy_locations() {
         limit_req zone=api burst=20 nodelay;
         
         proxy_pass http://${api_gateway_container}/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        
-        proxy_connect_timeout 300s;
-        proxy_read_timeout 300s;
-        proxy_send_timeout 300s;
-        
-        proxy_buffer_size 128k;
-        proxy_buffers 4 256k;
-        proxy_busy_buffers_size 256k;
+        include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
 "

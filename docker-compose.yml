@@ -10,6 +10,7 @@ services:
       - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/includes:/etc/nginx/includes:ro
       - ./certificates:/etc/nginx/certs:ro
       - ./logs/nginx:/var/log/nginx:rw
       - ./webroot:/var/www/html:rw

@@ -13,11 +13,8 @@ server {
     listen [::]:80;
     server_name {{DOMAIN_NAME}} www.{{DOMAIN_NAME}};
     
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    # Common HTTP server settings (security headers)
+    include /etc/nginx/includes/common-http-server-settings.conf;
     
     # Let's Encrypt challenge
     location ^~ /.well-known/acme-challenge/ {
@@ -36,54 +33,18 @@ server {
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    http2 on;
     server_name {{DOMAIN_NAME}} www.{{DOMAIN_NAME}};
     
     # SSL Configuration
+    # Common SSL settings (protocols, ciphers, session cache) are in nginx.conf
+    # Only domain-specific certificate paths are configured here
     ssl_certificate /etc/nginx/certs/{{DOMAIN_NAME}}/fullchain.pem;
     ssl_certificate_key /etc/nginx/certs/{{DOMAIN_NAME}}/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
     
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
-    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
-    
-    # Enable gzip compression
-    gzip on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-    
-    # Rate limiting
-    limit_req zone=general burst=50 nodelay;
+    # Common HTTPS server settings (http2, security headers, rate limiting, deny rules, error pages)
+    include /etc/nginx/includes/common-server-settings.conf;
     
     # Proxy locations (auto-generated from service registry)
     # Frontend service typically handles root path, backend handles /api/
     {{PROXY_LOCATIONS}}
-    
-    # Deny access to hidden files
-    location ~ /\. {
-        deny all;
-        access_log off;
-        log_not_found off;
-    }
-    
-    # Deny access to sensitive files
-    location ~* \.(env|git|svn|htaccess|htpasswd|ini|log|sh|sql|conf|bak|swp|swo)$ {
-        deny all;
-    }
-    
-    # Error pages
-    error_page 404 /404.html;
-    error_page 500 502 503 504 /50x.html;
-    location = /50x.html {
-        root /usr/share/nginx/html;
-        internal;
-    }
 }
-
