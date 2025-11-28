@@ -158,16 +158,38 @@ stop_service() {
         fi
     fi
     
-    # Try infrastructure compose file
+    # Try infrastructure compose file (from registry)
     local infra_compose=$(jq -r '.infrastructure_compose_file // empty' "$registry_file" 2>/dev/null)
     local infra_project=$(jq -r '.infrastructure_project_name // empty' "$registry_file" 2>/dev/null)
     
     if [ -n "$infra_compose" ] && [ "$infra_compose" != "null" ] && [ -f "$infra_compose" ]; then
         print_detail "Stopping infrastructure: $infra_compose"
         if [ -n "$infra_project" ] && [ "$infra_project" != "null" ]; then
-            docker compose -f "$infra_compose" -p "$infra_project" down 2>&1 || true
+            if docker compose -f "$infra_compose" -p "$infra_project" down 2>&1; then
+                stopped=true
+                print_success "Infrastructure stopped for $service_name"
+            fi
         else
-            docker compose -f "$infra_compose" down 2>&1 || true
+            if docker compose -f "$infra_compose" down 2>&1; then
+                stopped=true
+                print_success "Infrastructure stopped for $service_name"
+            fi
+        fi
+    fi
+    
+    # Also check for standard infrastructure compose file (docker-compose.infrastructure.yml)
+    # This is used by services that have service-specific infrastructure
+    if [ -f "docker-compose.infrastructure.yml" ]; then
+        # Try to determine project name from registry or use default pattern
+        local default_infra_project="${project_base}_infrastructure"
+        if [ -z "$default_infra_project" ] || [ "$default_infra_project" = "null" ]; then
+            default_infra_project="${service_name}_infrastructure"
+        fi
+        
+        print_detail "Stopping service-specific infrastructure: docker-compose.infrastructure.yml"
+        if docker compose -f "docker-compose.infrastructure.yml" -p "$default_infra_project" down 2>&1; then
+            stopped=true
+            print_success "Service-specific infrastructure stopped for $service_name"
         fi
     fi
     
@@ -215,6 +237,65 @@ stop_database_server() {
         print_warning "database-server may not be running or already stopped"
         return 0
     fi
+}
+
+# Function to stop all remaining running containers
+stop_all_remaining_containers() {
+    print_status ""
+    print_status "Phase 4: Stopping All Remaining Containers"
+    print_status "------------------------------------------"
+    
+    # Get list of all running containers
+    local running_containers=$(docker ps --format "{{.Names}}" 2>/dev/null || echo "")
+    
+    if [ -z "$running_containers" ]; then
+        print_success "No remaining containers to stop"
+        return 0
+    fi
+    
+    local container_count=$(echo "$running_containers" | wc -l)
+    print_status "Found $container_count remaining container(s) to stop"
+    
+    local stopped_count=0
+    local failed_count=0
+    
+    while IFS= read -r container_name; do
+        if [ -z "$container_name" ]; then
+            continue
+        fi
+        
+        print_detail "Stopping container: $container_name"
+        
+        # Try graceful stop first
+        if docker stop "$container_name" 2>/dev/null; then
+            print_success "Stopped: $container_name"
+            stopped_count=$((stopped_count + 1))
+        else
+            # If graceful stop fails, try force kill
+            print_warning "Graceful stop failed for $container_name, trying force kill..."
+            if docker kill "$container_name" 2>/dev/null; then
+                print_success "Force stopped: $container_name"
+                stopped_count=$((stopped_count + 1))
+            else
+                print_error "Failed to stop: $container_name"
+                failed_count=$((failed_count + 1))
+            fi
+        fi
+        
+        # Remove the container
+        docker rm -f "$container_name" 2>/dev/null || true
+        
+        sleep 0.5
+    done <<< "$running_containers"
+    
+    print_status ""
+    if [ $failed_count -eq 0 ]; then
+        print_success "All remaining containers stopped: $stopped_count/$container_count"
+    else
+        print_warning "Stopped $stopped_count/$container_count containers ($failed_count failed)"
+    fi
+    
+    return 0
 }
 
 # Main execution
@@ -279,6 +360,9 @@ stop_database_server
 # Stop nginx-microservice last
 stop_nginx_microservice
 
+# Phase 4: Stop all remaining containers (not managed by docker-compose)
+stop_all_remaining_containers
+
 print_status ""
 print_status "=========================================="
 print_success "All services stop process completed!"
@@ -300,6 +384,18 @@ if [ "$RUNNING_COUNT" -eq 0 ]; then
 else
     print_warning "$RUNNING_COUNT container(s) still running:"
     docker ps --format "  - {{.Names}}: {{.Status}}" 2>&1
+    print_status ""
+    print_status "Attempting to stop remaining containers..."
+    stop_all_remaining_containers
+    print_status ""
+    # Check again
+    RUNNING_COUNT=$(docker ps -q | wc -l)
+    if [ "$RUNNING_COUNT" -eq 0 ]; then
+        print_success "All containers are now stopped ${GREEN_CHECK}"
+    else
+        print_error "$RUNNING_COUNT container(s) still running after stop attempt:"
+        docker ps --format "  - {{.Names}}: {{.Status}}" 2>&1
+    fi
 fi
 
 print_status ""
@@ -310,6 +406,9 @@ if [ "$STOPPED_COUNT" -gt 0 ]; then
     docker ps -a --filter "status=exited" --format "  - {{.Names}}: {{.Status}}" 2>&1 | head -20
 fi
 
-$SCRIPT_DIR/status-all-services.sh
+# Run status script if it exists
+if [ -f "$SCRIPT_DIR/status-all-services.sh" ]; then
+    "$SCRIPT_DIR/status-all-services.sh" 2>/dev/null || true
+fi
 
 exit 0
