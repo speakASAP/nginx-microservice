@@ -25,6 +25,34 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Service validated in registry"
 
+# Pre-deployment: Check for restarting containers and port conflicts
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
+
+# Load service registry to get container names and ports
+REGISTRY=$(load_service_registry "$SERVICE_NAME")
+SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+
+# Check for restarting containers and kill them
+if [ -n "$SERVICE_KEYS" ]; then
+    while IFS= read -r service_key; do
+        CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+        PORT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].port // empty" 2>/dev/null)
+        
+        if [ -n "$CONTAINER_BASE" ] && [ "$CONTAINER_BASE" != "null" ]; then
+            # Check for blue and green containers
+            if type kill_container_if_exists >/dev/null 2>&1; then
+                kill_container_if_exists "${CONTAINER_BASE}-blue" "$SERVICE_NAME" "pre-deploy"
+                kill_container_if_exists "${CONTAINER_BASE}-green" "$SERVICE_NAME" "pre-deploy"
+            fi
+            
+            # Check for port conflicts if port is specified
+            if [ -n "$PORT" ] && [ "$PORT" != "null" ] && type kill_port_if_in_use >/dev/null 2>&1; then
+                kill_port_if_in_use "$PORT" "$SERVICE_NAME" "pre-deploy"
+            fi
+        fi
+    done <<< "$SERVICE_KEYS"
+fi
+
 # Phase 0: Ensure shared infrastructure is running
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 0: Ensuring shared infrastructure is running"
 
