@@ -54,12 +54,31 @@ if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>/
         echo ""
         echo "Waiting for nginx to be ready..."
         sleep 3
+        
+        # Check if container is restarting
+        local nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
+        if [ -n "$nginx_status" ] && echo "$nginx_status" | grep -qE "Restarting"; then
+            echo "⚠️  Nginx container is restarting after restart attempt"
+            echo "   This indicates a restart loop. Running diagnostic..."
+            echo ""
+            if [ -f "${SCRIPT_DIR}/diagnose-nginx-restart.sh" ]; then
+                "${SCRIPT_DIR}/diagnose-nginx-restart.sh"
+            else
+                echo "   Container logs:"
+                docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/   /' || true
+            fi
+            exit 1
+        fi
+        
         if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t >/dev/null 2>&1; then
             echo "✅ Nginx is running and configuration is valid"
             exit 0
         else
             echo "⚠️  Nginx restarted but configuration test failed. Check logs:"
             echo "   docker compose logs nginx"
+            echo ""
+            echo "   Or run diagnostic script:"
+            echo "   ./scripts/diagnose-nginx-restart.sh"
             exit 1
         fi
     else
