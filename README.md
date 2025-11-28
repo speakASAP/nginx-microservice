@@ -562,6 +562,7 @@ For detailed documentation, see:
 - `sync-containers-and-nginx.sh` - Syncs containers and symlinks, optionally restarts nginx
 - `reload-nginx.sh` - Reloads nginx configuration (lightweight, no restart)
 - `status-all-services.sh` - Shows status of all services and containers
+- `diagnose-nginx-restart.sh` - **RECOMMENDED**: Comprehensive diagnostic tool for nginx container restart loops
 
 **Note**: The blue/green system uses a modern symlink-based approach where each service has separate blue and green config files (`{domain}.blue.conf` and `{domain}.green.conf`), with a symlink (`{domain}.conf`) pointing to the active environment. This replaces the legacy file-modification approach.
 

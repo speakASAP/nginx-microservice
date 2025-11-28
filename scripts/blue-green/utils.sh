@@ -220,21 +220,47 @@ generate_upstream_blocks() {
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
         
+        # Check if containers exist (for backup servers, mark as down if they don't exist)
+        local blue_exists=true
+        local green_exists=true
+        
+        # Check if blue container exists (running or stopped)
+        if ! docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${blue_container}$"; then
+            blue_exists=false
+        fi
+        
+        # Check if green container exists (running or stopped)
+        if ! docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${green_container}$"; then
+            green_exists=false
+        fi
+        
         # Always add blue server (active or backup based on active_color)
+        # Mark as 'down' if it's a backup server and doesn't exist
+        local blue_down=""
+        if [ -n "$blue_backup" ] && [ "$blue_exists" = "false" ]; then
+            blue_down=" down"
+        fi
+        
         if [ -n "$blue_weight" ]; then
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup}${blue_down} max_fails=3 fail_timeout=30s;
 "
         else
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup}${blue_down} max_fails=3 fail_timeout=30s;
 "
         fi
         
         # Always add green server (active or backup based on active_color)
+        # Mark as 'down' if it's a backup server and doesn't exist
+        local green_down=""
+        if [ -n "$green_backup" ] && [ "$green_exists" = "false" ]; then
+            green_down=" down"
+        fi
+        
         if [ -n "$green_weight" ]; then
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup}${green_down} max_fails=3 fail_timeout=30s;
 "
         else
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup}${green_down} max_fails=3 fail_timeout=30s;
 "
         fi
         

@@ -99,7 +99,105 @@ docker network inspect nginx-network | grep crypto-ai
 
 ---
 
-### Issue 3: "Health check failed, rollback triggered"
+### Issue 3: "Nginx container restart loop"
+
+**Error Message:**
+
+```text
+Error response from daemon: Container is restarting, wait until the container is running
+nginx-microservice started but config test ✗ failed after 15 attempts
+```
+
+**Causes:**
+
+1. Invalid nginx configuration (syntax errors, missing upstreams)
+2. Port conflicts (ports 80/443 already in use)
+3. Health check failures in docker-compose.yml
+4. Resource constraints (memory/CPU limits)
+5. Dependency issues (certbot not ready, network not available)
+
+**Solutions:**
+
+#### **A. Run Diagnostic Script (Recommended)**
+
+The diagnostic script automatically identifies the root cause:
+
+```bash
+cd /path/to/nginx-microservice
+
+# Run diagnostic
+./scripts/diagnose-nginx-restart.sh
+
+# Or with specific container ID
+./scripts/diagnose-nginx-restart.sh fa26210e28e3bcf03eb72b3aa55c14e988bef4f2f3495506239f788d77d6856e
+```
+
+The diagnostic script will:
+
+- Check container status (running/restarting/stopped)
+- Show container logs (last 50 lines)
+- Test nginx configuration (even if container is restarting)
+- Check for port conflicts
+- Verify volume mounts and network connectivity
+- Provide actionable fix recommendations
+
+#### **B. Fix Nginx Configuration Errors**
+
+If the diagnostic shows invalid nginx configuration:
+
+```bash
+# Test config manually
+docker compose run --rm nginx nginx -t
+
+# Check specific config files
+ls -la nginx/conf.d/
+
+# Fix errors in config files, then restart
+./scripts/restart-nginx.sh
+```
+
+#### **C. Fix Port Conflicts**
+
+```bash
+# Check what's using ports 80/443
+docker ps --format "{{.Names}}\t{{.Ports}}" | grep -E ":80|:443"
+
+# Stop conflicting containers
+docker stop <container-name>
+docker rm <container-name>
+
+# Restart nginx
+./scripts/restart-nginx.sh
+```
+
+#### **D. Stop Restart Loop and Investigate**
+
+```bash
+# Stop the restarting container
+docker stop nginx-microservice
+
+# Check logs
+docker logs nginx-microservice
+
+# Test config in temporary container
+docker compose run --rm nginx nginx -t
+
+# Fix issues, then restart
+./scripts/restart-nginx.sh
+```
+
+**Prevention:**
+
+The health check in `start-all-services.sh` now automatically:
+
+- Detects restarting containers before attempting `docker exec`
+- Waits and retries if container is restarting
+- Stops container and tests config if restart loop persists
+- Provides clear error messages with diagnostic script suggestions
+
+---
+
+### Issue 4: "Health check failed, rollback triggered"
 
 **Error Message:**
 
@@ -159,7 +257,7 @@ docker exec crypto-ai-backend-green env | grep DATABASE
 
 ---
 
-### Issue 4: State File Out of Sync
+### Issue 5: State File Out of Sync
 
 **Symptoms:**
 
@@ -218,7 +316,7 @@ EOF
 
 ---
 
-### Issue 5: HTTPS Connection Timeout
+### Issue 6: HTTPS Connection Timeout
 
 **Symptoms:**
 
@@ -284,7 +382,7 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
 
 ---
 
-### Issue 6: Both Colors Running But Traffic Not Switching
+### Issue 7: Both Colors Running But Traffic Not Switching
 
 **Symptoms:**
 
@@ -326,7 +424,7 @@ docker compose exec nginx nginx -s reload
 
 ---
 
-### Issue 7: Cleanup Failed
+### Issue 8: Cleanup Failed
 
 **Error Message:**
 
@@ -362,7 +460,7 @@ docker compose -f /path/to/crypto-ai-agent/docker-compose.green.yml \
 
 ---
 
-### Issue 8: Deployment Stuck or Hanging
+### Issue 9: Deployment Stuck or Hanging
 
 **Symptoms:**
 
