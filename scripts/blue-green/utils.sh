@@ -283,38 +283,74 @@ generate_upstream_blocks() {
             green_backup=""
         fi
         
-        # Always generate both blue and green servers in upstream blocks
-        # Nginx resolves hostnames at runtime via DNS, not at startup
-        # This means nginx can start with upstreams pointing to non-existent containers
-        # Nginx will return 502 errors until containers are available, which is acceptable
-        # When containers start, nginx will automatically connect to them
+        # Check container existence - nginx validates upstream hostnames at startup
+        # We only include containers that exist to avoid nginx startup failures
+        # Note: This is a pragmatic compromise - nginx DOES validate hostnames at startup
         local blue_container="${container_base}-blue"
         local green_container="${container_base}-green"
         
-        # Build upstream block - always include both servers regardless of container state
+        # Check if containers exist (using docker ps to check running or stopped containers)
+        local blue_exists=false
+        local green_exists=false
+        
+        # Use docker inspect to check if container exists (more reliable than docker ps)
+        if docker inspect "${blue_container}" >/dev/null 2>&1; then
+            blue_exists=true
+        fi
+        
+        if docker inspect "${green_container}" >/dev/null 2>&1; then
+            green_exists=true
+        fi
+        
+        # Build upstream block - only include containers that exist
+        # We must have at least one server, otherwise nginx will fail with "no servers are inside upstream"
+        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
+            # Neither container exists - include both as placeholders
+            # This allows nginx to start, but will return 502s until containers are created
+            # Note: This will still fail nginx startup validation, so we need at least one container
+            print_warning "Neither ${blue_container} nor ${green_container} exists - upstream will fail nginx validation"
+            # Include active color as placeholder (nginx will fail, but at least we tried)
+            if [ "$active_color" = "blue" ]; then
+                upstream_blocks="${upstream_blocks}upstream ${container_base} {
+    server ${blue_container}:${service_port} weight=100 max_fails=3 fail_timeout=30s;
+}
+"
+            else
+                upstream_blocks="${upstream_blocks}upstream ${container_base} {
+    server ${green_container}:${service_port} weight=100 max_fails=3 fail_timeout=30s;
+}
+"
+            fi
+            continue
+        fi
+        
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
 
-        # Always add blue server with appropriate weight and backup status
-        if [ -n "$blue_weight" ]; then
-            # Active server
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+        # Add blue server only if it exists
+        if [ "$blue_exists" = "true" ]; then
+            if [ -n "$blue_weight" ]; then
+                # Active server
+                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-        else
-            # Backup server
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+            else
+                # Backup server
+                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
 "
+            fi
         fi
         
-        # Always add green server with appropriate weight and backup status
-        if [ -n "$green_weight" ]; then
-            # Active server
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+        # Add green server only if it exists
+        if [ "$green_exists" = "true" ]; then
+            if [ -n "$green_weight" ]; then
+                # Active server
+                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
 "
-        else
-            # Backup server
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+            else
+                # Backup server
+                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
 "
+            fi
         fi
         
         upstream_blocks="${upstream_blocks}}
