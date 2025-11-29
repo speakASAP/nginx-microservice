@@ -66,18 +66,47 @@ INFRASTRUCTURE_SERVICES=(
     "database-server"
 )
 
-MICROSERVICES=(
-    "logging-microservice"
-    "auth-microservice"
-    "payment-microservice"
-    "notifications-microservice"
-)
+# Dynamically discover services from service-registry directory
+discover_services() {
+    local registry_dir="$1"
+    local services=()
+    
+    if [ ! -d "$registry_dir" ]; then
+        return
+    fi
+    
+    # Find all .json files in service-registry (excluding backups)
+    while IFS= read -r registry_file; do
+        local service_name=$(basename "$registry_file" .json)
+        # Skip backup files
+        if [[ "$service_name" != *".backup" ]] && [[ "$service_name" != *".bak" ]]; then
+            services+=("$service_name")
+        fi
+    done < <(find "$registry_dir" -maxdepth 1 -name "*.json" -type f 2>/dev/null | sort)
+    
+    # Output services as newline-separated list
+    printf '%s\n' "${services[@]}"
+}
 
-APPLICATIONS=(
-    "crypto-ai-agent"
-    "statex"
-    "e-commerce"
-)
+# Discover all registered services
+ALL_DISCOVERED_SERVICES=($(discover_services "$REGISTRY_DIR"))
+
+# Categorize services
+# Microservices: services ending with "-microservice"
+MICROSERVICES=()
+# Applications: all other services (not infrastructure, not microservices)
+APPLICATIONS=()
+
+for service in "${ALL_DISCOVERED_SERVICES[@]}"; do
+    if [[ "$service" == *"-microservice" ]]; then
+        MICROSERVICES+=("$service")
+    else
+        # Skip infrastructure services
+        if [[ "$service" != "nginx-microservice" ]] && [[ "$service" != "database-server" ]]; then
+            APPLICATIONS+=("$service")
+        fi
+    fi
+done
 
 # Initialize caches - call once at start
 initialize_caches() {
@@ -191,8 +220,11 @@ check_service_health() {
     fi
     
     # Use health-check.sh if available
+    # Run in subshell to prevent script exit on failure
     if [ -f "${BLUE_GREEN_DIR}/health-check.sh" ]; then
-        if "${BLUE_GREEN_DIR}/health-check.sh" "$service_name" >/dev/null 2>&1; then
+        (set +e; "${BLUE_GREEN_DIR}/health-check.sh" "$service_name" >/dev/null 2>&1)
+        local health_result=$?
+        if [ $health_result -eq 0 ]; then
             SERVICE_HEALTH_CACHE[$service_name]=0
             return 0
         else
@@ -325,12 +357,14 @@ print_status "=========================================="
 # Store results for dashboard reuse
 declare -A MICROSERVICE_RESULTS
 
+# Temporarily disable exit on error for the loop
+set +e
 for service in "${MICROSERVICES[@]}"; do
-    container_status=$(get_container_status "$service")
-    domain=$(get_service_domain "$service")
+    container_status=$(get_container_status "$service" || echo "not-registered")
+    domain=$(get_service_domain "$service" || echo "")
     
-    # Check health and store result
-    check_service_health "$service"
+    # Check health and store result (may return 1 for unhealthy, which is OK)
+    check_service_health "$service" || true
     health_result=$?
     
     # Store for dashboard
@@ -340,6 +374,7 @@ for service in "${MICROSERVICES[@]}"; do
     
     display_service_status "$service" "$container_status" "$domain" "$health_result"
 done
+set -e
 
 print_status ""
 
@@ -351,12 +386,14 @@ print_status "=========================================="
 # Store results for dashboard reuse
 declare -A APPLICATION_RESULTS
 
+# Temporarily disable exit on error for the loop
+set +e
 for service in "${APPLICATIONS[@]}"; do
-    container_status=$(get_container_status "$service")
-    domain=$(get_service_domain "$service")
+    container_status=$(get_container_status "$service" || echo "not-registered")
+    domain=$(get_service_domain "$service" || echo "")
     
-    # Check health and store result
-    check_service_health "$service"
+    # Check health and store result (may return 1 for unhealthy, which is OK)
+    check_service_health "$service" || true
     health_result=$?
     
     # Store for dashboard
@@ -366,6 +403,7 @@ for service in "${APPLICATIONS[@]}"; do
     
     display_service_status "$service" "$container_status" "$domain" "$health_result"
 done
+set -e
 
 print_status ""
 print_status "=========================================="
