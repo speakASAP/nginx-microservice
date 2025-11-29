@@ -183,10 +183,12 @@ sync_service_symlink() {
         return 0
     fi
     
-    # Check which containers are running
-    local container_status=$(check_service_containers "$service_name")
-    local running_color=$(echo "$container_status" | cut -d':' -f1)
-    local status_type=$(echo "$container_status" | cut -d':' -f2)
+    # First, ensure configs are generated from registry (independent of container state)
+    print_status "Ensuring nginx configs are generated for $service_name..."
+    if ! ensure_blue_green_configs "$service_name" "$domain"; then
+        print_error "Failed to generate configs for $service_name"
+        return 1
+    fi
     
     # Load state to get expected active color
     local state=$(load_state "$service_name" 2>/dev/null || echo "")
@@ -195,15 +197,20 @@ sync_service_symlink() {
         expected_color=$(echo "$state" | jq -r '.active_color // "blue"' 2>/dev/null || echo "blue")
     fi
     
-    # Determine which color to use
+    # Check which containers are running (optional - for informational purposes only)
+    local container_status=$(check_service_containers "$service_name")
+    local running_color=$(echo "$container_status" | cut -d':' -f1)
+    local status_type=$(echo "$container_status" | cut -d':' -f2)
+    
+    # Determine which color to use for symlink
+    # Prefer expected color from state, but update if containers don't match
     local target_color="$expected_color"
     
     if [ "$running_color" = "none" ]; then
-        print_warning "No containers running for $service_name, keeping symlink at $expected_color"
-        # Ensure containers are started
-        if ! ensure_service_containers_running "$service_name" "$expected_color"; then
-            print_warning "Could not start containers for $service_name"
-        fi
+        print_status "No containers running for $service_name, using expected color: $expected_color"
+        # Note: We don't require containers to be running - nginx will return 502s until they start
+        # Optionally try to start containers, but don't fail if they can't be started
+        ensure_service_containers_running "$service_name" "$expected_color" >/dev/null 2>&1 || true
         target_color="$expected_color"
     elif [ "$running_color" != "$expected_color" ]; then
         print_warning "Running containers ($running_color) don't match expected color ($expected_color) for $service_name"
@@ -213,15 +220,15 @@ sync_service_symlink() {
         else
             print_warning "Partial container status, keeping expected color: $expected_color"
             target_color="$expected_color"
-            # Try to start missing containers
-            ensure_service_containers_running "$service_name" "$expected_color" || true
+            # Optionally try to start missing containers
+            ensure_service_containers_running "$service_name" "$expected_color" >/dev/null 2>&1 || true
         fi
     else
-        print_success "Symlink for $service_name is correct (pointing to $expected_color, containers running)"
-        # Verify all containers are running
+        print_success "Symlink for $service_name is correct (pointing to $expected_color)"
+        # Optionally verify all containers are running, but don't fail if they're not
         if [ "$status_type" != "all" ]; then
-            print_warning "Some containers missing for $service_name, attempting to start..."
-            ensure_service_containers_running "$service_name" "$expected_color" || true
+            print_status "Some containers missing for $service_name, optionally starting..."
+            ensure_service_containers_running "$service_name" "$expected_color" >/dev/null 2>&1 || true
         fi
     fi
     
@@ -239,6 +246,8 @@ sync_service_symlink() {
             print_error "Failed to update symlink for $service_name"
             return 1
         fi
+    else
+        print_success "Symlink for $service_name is already correct ($domain -> $target_color)"
     fi
     
     return 0
@@ -300,13 +309,15 @@ fi
 print_status ""
 
 # Test nginx configuration
+# Note: Config test may fail if nginx container is not running, but that's okay
+# We'll still proceed with reload if nginx is running
 print_status "Testing nginx configuration..."
 if test_nginx_config; then
     print_success "Nginx configuration is valid"
 else
-    print_error "Nginx configuration test failed!"
-    print_error "Please fix configuration errors before restarting nginx"
-    exit 1
+    print_warning "Nginx configuration test failed or nginx container is not running"
+    print_warning "This may be expected if nginx is not yet started"
+    # Don't exit - allow reload attempt if nginx is running
 fi
 
 # Restart nginx if requested

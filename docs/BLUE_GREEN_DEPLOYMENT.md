@@ -443,6 +443,13 @@ Configs are auto-generated from the service registry using the template system:
 1. **Template**: `nginx/templates/domain-blue-green.conf.template`
 2. **Auto-detection**: Services are automatically detected from the service registry JSON
 3. **Upstream blocks**: Generated for each service with proper blue/green container names
+4. **Independence**: Configs are generated from registry, not container state - nginx can start even if containers are not running
+
+**Important**: Nginx resolves hostnames at runtime via DNS, not at startup. This means:
+
+- Nginx can start with upstreams pointing to non-existent containers
+- Nginx will return 502 errors until containers are available (acceptable behavior)
+- When containers start, nginx automatically connects to them
 
 ### Example Configuration
 

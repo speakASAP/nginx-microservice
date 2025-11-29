@@ -1,6 +1,7 @@
 #!/bin/bash
 # Restart Nginx Script
-# Syncs containers and symlinks, tests configuration, and restarts nginx container
+# Syncs containers and symlinks, tests configuration, and reloads/restarts nginx
+# Prefers reload over restart to avoid breaking existing connections
 
 set -e
 
@@ -23,6 +24,30 @@ if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>/
     echo ""
     echo "✅ Configuration test passed"
     echo ""
+    
+    # Check if nginx container is running
+    nginx_running=false
+    if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$"; then
+        nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
+        if [ -n "$nginx_status" ] && ! echo "$nginx_status" | grep -qE "Restarting"; then
+            nginx_running=true
+        fi
+    fi
+    
+    if [ "$nginx_running" = "true" ]; then
+        # Nginx is running - use reload to avoid breaking connections
+        echo "Nginx is running - using reload (preserves existing connections)..."
+        if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -s reload; then
+            echo "✅ Nginx reloaded successfully"
+            exit 0
+        else
+            echo "⚠️  Reload failed, attempting restart..."
+            # Fall through to restart logic
+        fi
+    fi
+    
+    # Nginx is not running or reload failed - use restart
+    echo "Nginx is not running or reload failed - using restart..."
     
     # Check for restarting containers and port conflicts before restarting
     echo "Checking for port conflicts and restarting containers..."

@@ -21,6 +21,7 @@ All SSL management is now centralized in this microservice.
 - 📊 **Certificate Caching**: Reduces Let's Encrypt API calls by caching certificates locally
 - 🤖 **Automated Renewal**: Certificates renewed automatically via systemd timer or cron
 - 📝 **Comprehensive Logging**: Access and error logs for all domains
+- 🎯 **Container Independence**: Nginx starts and runs independently of container state - configs generated from registry, not container state
 
 ## Architecture
 
@@ -115,11 +116,13 @@ docker compose up -d
 ./scripts/reload-nginx.sh
 ```
 
-**Note**: The `restart-nginx.sh` script automatically syncs containers and symlinks before restarting to ensure all configurations point to running containers.
+**Note**: The `restart-nginx.sh` script automatically syncs containers and symlinks before restarting. It prefers `reload` over `restart` when nginx is already running to avoid breaking existing connections.
 
 ### Container and Nginx Synchronization
 
-The system includes an automated synchronization mechanism that ensures nginx configuration symlinks point to the correct active containers (blue/green) before restarting nginx. This prevents nginx from failing to start due to missing containers.
+The system includes an automated synchronization mechanism that ensures nginx configuration symlinks point to the correct active containers (blue/green) and generates configs from the service registry.
+
+**Important**: Nginx is **independent of container state** - it can start and run even when containers are not running. Nginx will return 502 errors until containers become available, which is acceptable behavior. When containers start, nginx automatically connects to them.
 
 **Automatic Sync (Recommended)**:
 
@@ -141,17 +144,20 @@ The system includes an automated synchronization mechanism that ensures nginx co
 **What it does**:
 
 1. Scans all services in the registry
-2. Checks which containers are running (blue, green, or both)
-3. Updates symlinks to point to the color with running containers
-4. Starts missing containers automatically (using deploy-smart.sh)
-5. Validates nginx configuration
-6. Optionally restarts nginx
+2. Generates nginx configs from registry (independent of container state)
+3. Checks which containers are running (blue, green, or both) - for informational purposes
+4. Updates symlinks to point to the expected color (from state) or running containers
+5. Optionally starts missing containers (using deploy-smart.sh) - not required
+6. Validates nginx configuration (may fail if nginx container is not running, which is acceptable)
+7. Optionally reloads/restarts nginx
 
 **Symlink Logic**:
 
 - If containers match expected color → Symlink stays as-is ✅
 - If containers don't match → Updates symlink to match running containers
-- If no containers running → Tries to start them, keeps expected color
+- If no containers running → Keeps expected color, optionally tries to start them
+
+**Key Principle**: Configs are generated from the service registry, not from container state. Nginx can start and run with configs pointing to non-existent containers - it will return 502 errors until containers are available.
 
 For detailed information, see **[Container and Nginx Synchronization Guide](docs/CONTAINER_NGINX_SYNC.md)**.
 
@@ -167,6 +173,34 @@ docker compose run --rm certbot /scripts/check-cert-expiry.sh [domain]
 # Renew certificates
 docker compose run --rm certbot /scripts/renew-cert.sh
 ```
+
+## Nginx Independence
+
+**Key Principle**: Nginx is independent of container state. This means:
+
+- ✅ **Nginx can start** even when no containers are running
+- ✅ **Configs are generated** from the service registry, not from container state
+- ✅ **Nginx will return 502 errors** until containers become available (acceptable behavior)
+- ✅ **Nginx automatically connects** to containers when they start
+- ✅ **No dependency** - containers can start/stop independently of nginx
+
+### How It Works
+
+Nginx resolves hostnames at runtime via DNS, not at startup. This allows:
+
+1. **Config Generation**: Upstream blocks are always generated from the service registry, regardless of whether containers exist
+2. **Independent Startup**: Nginx starts successfully even if upstreams point to non-existent containers
+3. **Runtime Resolution**: When containers start, nginx automatically resolves their hostnames and connects
+4. **Graceful Degradation**: Nginx returns 502 errors for unavailable upstreams until containers are ready
+
+### Benefits
+
+- **No startup dependencies**: Nginx doesn't wait for containers to start
+- **Flexible deployment**: Containers can be started/stopped without affecting nginx
+- **Zero-downtime**: Nginx stays running during container deployments
+- **Simplified operations**: No need to coordinate nginx and container startup
+
+For more details, see the [Container and Nginx Synchronization Guide](docs/CONTAINER_NGINX_SYNC.md).
 
 ## Configuration
 

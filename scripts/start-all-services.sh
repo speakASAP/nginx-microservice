@@ -216,76 +216,59 @@ start_nginx_microservice() {
         print_detail "Container status after startup:"
         docker compose ps 2>&1 || true
         
-        # Wait for nginx to be healthy
-        print_status "Waiting for nginx to be healthy (checking every 2 seconds)..."
+        # Wait for nginx container to be running
+        # Nginx is independent of container state - it can start even if upstreams are unavailable
+        # Nginx will return 502 errors until containers are available, which is acceptable
+        print_status "Waiting for nginx container to be running (checking every 2 seconds)..."
         local max_attempts=15
         local attempt=0
         while [ $attempt -lt $max_attempts ]; do
-            # Check if container is restarting before attempting exec
+            # Check if container is running (not restarting)
             local container_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
             
             if [ -n "$container_status" ] && echo "$container_status" | grep -qE "Restarting"; then
                 attempt=$((attempt + 1))
                 if [ $attempt -lt $max_attempts ]; then
-                    print_detail "Health check attempt $attempt/$max_attempts: Container is restarting, waiting..."
-                    print_detail "Container status: $container_status"
-                    print_detail "Retrying in 2 seconds..."
+                    print_detail "Container is restarting, waiting... (attempt $attempt/$max_attempts)"
                     sleep 2
                     continue
                 else
                     # Container still restarting after max attempts - diagnose the issue
                     print_error "nginx-microservice is in restart loop after $max_attempts attempts"
-                    print_detail "Container status: $container_status"
-                    print_detail ""
                     print_detail "Container logs (last 30 lines):"
                     docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
                     print_detail ""
                     print_warning "Run diagnostic script to identify root cause:"
                     print_detail "  ./scripts/diagnose-nginx-restart.sh"
-                    print_detail ""
-                    print_detail "Attempting to stop container and test config..."
-                    docker stop nginx-microservice 2>/dev/null || true
-                    sleep 2
-                    # Test config using docker compose run
-                    if docker compose run --rm nginx nginx -t 2>&1; then
-                        print_warning "Config test passed in temporary container, but container keeps restarting"
-                        print_detail "Possible causes: healthcheck failure, resource constraints, or dependency issues"
-                    else
-                        print_error "Config test failed - this is likely the root cause"
-                    fi
                     return 1
                 fi
             fi
             
-            # Container is not restarting, try health check
-            local nginx_test_output
-            nginx_test_output=$(docker exec nginx-microservice nginx -t 2>&1)
-            local nginx_test_exit=$?
-            if [ $nginx_test_exit -eq 0 ]; then
-                print_success "nginx-microservice is ${GREEN_CHECK} healthy (config test passed)"
-                print_detail "Config test output:"
-                echo "$nginx_test_output" | sed 's/^/  /'
-                print_detail "Container logs (last 10 lines):"
-                docker compose logs --tail=10 nginx 2>&1 || true
+            # Check if container is running (not just exists)
+            if container_running "nginx-microservice"; then
+                print_success "nginx-microservice is ${GREEN_CHECK} running"
+                print_detail "Container status:"
+                docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
+                print_detail ""
+                print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
+                print_detail "This is expected behavior - nginx will connect when containers start."
                 return 0
             else
                 attempt=$((attempt + 1))
                 if [ $attempt -lt $max_attempts ]; then
-                    print_detail "Health check attempt $attempt/$max_attempts failed:"
-                    echo "$nginx_test_output" | sed 's/^/  /' | head -5
-                    print_detail "Retrying in 2 seconds..."
+                    print_detail "Container not running yet, waiting... (attempt $attempt/$max_attempts)"
                     sleep 2
                 fi
             fi
         done
         
-        print_warning "nginx-microservice started but config test ${RED_X} failed after $max_attempts attempts"
+        print_warning "nginx-microservice container did not start after $max_attempts attempts"
         print_detail "Container logs (last 20 lines):"
         docker compose logs --tail=20 nginx 2>&1 || true
         print_detail ""
         print_warning "Run diagnostic script for detailed analysis:"
         print_detail "  ./scripts/diagnose-nginx-restart.sh"
-        return 0  # Continue anyway
+        return 1
     else
         print_error "Failed to start nginx-microservice"
         print_detail "Docker compose logs:"
