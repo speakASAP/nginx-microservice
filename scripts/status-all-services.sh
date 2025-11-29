@@ -331,7 +331,7 @@ for service in "${MICROSERVICES[@]}"; do
     
     # Check health and store result
     check_service_health "$service"
-    local health_result=$?
+    health_result=$?
     
     # Store for dashboard
     MICROSERVICE_RESULTS["${service}_status"]="$container_status"
@@ -357,7 +357,7 @@ for service in "${APPLICATIONS[@]}"; do
     
     # Check health and store result
     check_service_health "$service"
-    local health_result=$?
+    health_result=$?
     
     # Store for dashboard
     APPLICATION_RESULTS["${service}_status"]="$container_status"
