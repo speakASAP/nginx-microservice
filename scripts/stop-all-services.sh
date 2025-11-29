@@ -51,6 +51,7 @@ APPLICATIONS=(
     "e-commerce"
     "statex"                     # Includes frontend, submission-service, user-portal, content-service, ai-orchestrator, api-gateway
     "crypto-ai-agent"
+    "allegro"                    # Allegro integration service
 )
 
 MICROSERVICES=(

@@ -96,6 +96,7 @@ MICROSERVICES=(
 
 # Applications (may depend on microservices)
 APPLICATIONS=(
+    "allegro"                    # Needs postgres + redis
     "crypto-ai-agent"            # Needs postgres + redis
     "statex"                     # Needs postgres + redis
     "e-commerce"                 # Needs postgres + redis
