@@ -31,12 +31,59 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Checking shared infrastructure status"
 
-# Navigate to service directory
+# Check if service uses shared services from registry
+SHARED_SERVICES=$(echo "$REGISTRY" | jq -r '.shared_services[]? // empty' 2>/dev/null || echo "")
+USE_SHARED_DB=false
+
+# Check if service requires postgres or redis from shared database-server
+if echo "$SHARED_SERVICES" | grep -qE "postgres|redis"; then
+    USE_SHARED_DB=true
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Service uses shared services: $(echo "$SHARED_SERVICES" | tr '\n' ' ')"
+fi
+
+# If service uses shared services, always use shared database-server
+if [ "$USE_SHARED_DB" = "true" ]; then
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Checking for shared database-server (db-server-postgres, db-server-redis)"
+    
+    # Check for shared database-server (db-server-postgres, db-server-redis)
+    if docker ps --format "{{.Names}}" | grep -q "^db-server-postgres$"; then
+        log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Shared PostgreSQL (db-server-postgres) is running"
+        POSTGRES_RUNNING=true
+    else
+        log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Shared PostgreSQL (db-server-postgres) is not running"
+        POSTGRES_RUNNING=false
+    fi
+    
+    # Check for shared Redis
+    if echo "$SHARED_SERVICES" | grep -q "redis"; then
+        if docker ps --format "{{.Names}}" | grep -q "^db-server-redis$"; then
+            log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is running"
+            REDIS_RUNNING=true
+        else
+            log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is not running"
+            REDIS_RUNNING=false
+        fi
+    else
+        REDIS_RUNNING=true  # Service doesn't need Redis
+    fi
+    
+    # If shared services are running, we're done
+    if [ "$POSTGRES_RUNNING" = "true" ] && [ "$REDIS_RUNNING" = "true" ]; then
+        log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Shared infrastructure is available and running"
+        exit 0
+    else
+        print_error "Shared database-server is required but not running"
+        print_error "Please start database-server: cd $(cd "$SCRIPT_DIR/../.." && pwd) && docker compose -f docker-compose.db-server.yml up -d"
+        exit 1
+    fi
+fi
+
+# Navigate to service directory for service-specific infrastructure
 cd "$ACTUAL_PATH"
 
-# Infrastructure compose file
+# Infrastructure compose file (for services that don't use shared services)
 INFRASTRUCTURE_COMPOSE="docker-compose.infrastructure.yml"
-INFRASTRUCTURE_PROJECT="crypto_ai_agent_infrastructure"
+INFRASTRUCTURE_PROJECT="${SERVICE_NAME}_infrastructure"
 
 # Check if infrastructure compose file exists
 if [ ! -f "$INFRASTRUCTURE_COMPOSE" ]; then
@@ -62,21 +109,26 @@ if [ ! -f "$INFRASTRUCTURE_COMPOSE" ]; then
     fi
 fi
 
+# Service-specific infrastructure (only used if service doesn't use shared services)
+# Determine container names from service name
+SERVICE_POSTGRES_CONTAINER="${SERVICE_NAME}-postgres"
+SERVICE_REDIS_CONTAINER="${SERVICE_NAME}-redis"
+
 # Check if postgres container is running (service-specific infrastructure)
-if docker ps --format "{{.Names}}" | grep -q "^crypto-ai-postgres$"; then
-    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "PostgreSQL container is running"
+if docker ps --format "{{.Names}}" | grep -q "^${SERVICE_POSTGRES_CONTAINER}$"; then
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "PostgreSQL container (${SERVICE_POSTGRES_CONTAINER}) is running"
     POSTGRES_RUNNING=true
 else
-    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "PostgreSQL container is not running"
+    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "PostgreSQL container (${SERVICE_POSTGRES_CONTAINER}) is not running"
     POSTGRES_RUNNING=false
 fi
 
 # Check if redis container is running (service-specific infrastructure)
-if docker ps --format "{{.Names}}" | grep -q "^crypto-ai-redis$"; then
-    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Redis container is running"
+if docker ps --format "{{.Names}}" | grep -q "^${SERVICE_REDIS_CONTAINER}$"; then
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Redis container (${SERVICE_REDIS_CONTAINER}) is running"
     REDIS_RUNNING=true
 else
-    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Redis container is not running"
+    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Redis container (${SERVICE_REDIS_CONTAINER}) is not running"
     REDIS_RUNNING=false
 fi
 
@@ -157,7 +209,7 @@ if [ "$POSTGRES_RUNNING" = false ] || [ "$REDIS_RUNNING" = false ]; then
     # Wait for postgres to be healthy
     POSTGRES_HEALTHY=false
     for i in {1..30}; do
-        if docker exec crypto-ai-postgres pg_isready -U ${POSTGRES_USER:-crypto} -d ${POSTGRES_DB:-crypto_ai_agent} >/dev/null 2>&1; then
+        if docker exec "${SERVICE_POSTGRES_CONTAINER}" pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres} >/dev/null 2>&1; then
             POSTGRES_HEALTHY=true
             break
         fi
@@ -172,7 +224,7 @@ if [ "$POSTGRES_RUNNING" = false ] || [ "$REDIS_RUNNING" = false ]; then
     # Wait for redis to be healthy
     REDIS_HEALTHY=false
     for i in {1..15}; do
-        if docker exec crypto-ai-redis redis-cli ping >/dev/null 2>&1; then
+        if docker exec "${SERVICE_REDIS_CONTAINER}" redis-cli ping >/dev/null 2>&1; then
             REDIS_HEALTHY=true
             break
         fi
