@@ -40,7 +40,7 @@ if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>/
     fi
     
     # Fallback: manual check for restarting containers
-    local nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
+    nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
     if [ -n "$nginx_status" ] && echo "$nginx_status" | grep -qE "Restarting"; then
         echo "⚠️  Nginx container is restarting, force killing it first..."
         docker kill nginx-microservice 2>/dev/null || true
@@ -56,7 +56,7 @@ if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>/
         sleep 3
         
         # Check if container is restarting
-        local nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
+        nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
         if [ -n "$nginx_status" ] && echo "$nginx_status" | grep -qE "Restarting"; then
             echo "⚠️  Nginx container is restarting after restart attempt"
             echo "   This indicates a restart loop. Running diagnostic..."
