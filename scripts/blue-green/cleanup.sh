@@ -30,8 +30,13 @@ else
     exit 1
 fi
 
-# Load state
-STATE=$(load_state "$SERVICE_NAME")
+# Load state - for statex service, get domain from registry
+DOMAIN=""
+if [ "$SERVICE_NAME" = "statex" ]; then
+    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 # Determine inactive color (the one to clean up)
@@ -76,7 +81,7 @@ fi
 NEW_STATE=$(echo "$STATE" | jq --arg color "$INACTIVE_COLOR" \
     ".\"$INACTIVE_COLOR\".status = \"stopped\" | .\"$INACTIVE_COLOR\".deployed_at = null | .\"$INACTIVE_COLOR\".version = null")
 
-save_state "$SERVICE_NAME" "$NEW_STATE"
+save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
 
 log_message "SUCCESS" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Cleanup of $INACTIVE_COLOR completed"
 

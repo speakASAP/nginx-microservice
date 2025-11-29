@@ -30,8 +30,13 @@ else
     exit 1
 fi
 
-# Load state
-STATE=$(load_state "$SERVICE_NAME")
+# Load state - for statex service, get domain from registry
+DOMAIN=""
+if [ "$SERVICE_NAME" = "statex" ]; then
+    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 # Determine inactive color (the one we're preparing)
@@ -432,7 +437,7 @@ fi
 NEW_STATE=$(echo "$STATE" | jq --arg color "$PREPARE_COLOR" --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     ".\"$color\".status = \"ready\" | .\"$color\".deployed_at = \$timestamp")
 
-save_state "$SERVICE_NAME" "$NEW_STATE"
+save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
 
 log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "$PREPARE_COLOR deployment prepared (rebuilt: $REBUILT_SERVICES, skipped: $SKIPPED_SERVICES)"
 

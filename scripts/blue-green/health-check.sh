@@ -17,8 +17,13 @@ fi
 # Load service registry
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
 
-# Load state
-STATE=$(load_state "$SERVICE_NAME")
+# Load state - for statex service, get domain from registry
+DOMAIN=""
+if [ "$SERVICE_NAME" = "statex" ]; then
+    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Checking health of $ACTIVE_COLOR deployment"

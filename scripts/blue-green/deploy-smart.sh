@@ -127,8 +127,13 @@ if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
     
     # Only check if enabled (default: true)
     if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then
-        # Get active color from state
-        STATE=$(load_state "$SERVICE_NAME")
+        # Get active color from state - for statex service, get domain from registry
+        DOMAIN=""
+        if [ "$SERVICE_NAME" = "statex" ]; then
+            REGISTRY=$(load_service_registry "$SERVICE_NAME")
+            DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+        fi
+        STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
         ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
         
         if check_https_url "$DOMAIN" "$HTTPS_TIMEOUT" "$HTTPS_RETRIES" "$HTTPS_ENDPOINT" "$SERVICE_NAME" "$ACTIVE_COLOR"; then

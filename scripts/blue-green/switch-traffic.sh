@@ -18,8 +18,13 @@ fi
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
 DOMAIN=$(echo "$REGISTRY" | jq -r '.domain')
 
-# Load state
-STATE=$(load_state "$SERVICE_NAME")
+# Load state - for statex service, get domain from registry
+DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+if [ "$SERVICE_NAME" = "statex" ]; then
+    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 # Determine new active color (switch to opposite)
@@ -76,7 +81,7 @@ fi
 NEW_STATE=$(echo "$STATE" | jq --arg color "$NEW_COLOR" --arg old_color "$ACTIVE_COLOR" --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     ".active_color = \$color | .\"$NEW_COLOR\".status = \"running\" | .\"$old_color\".status = \"backup\" | .last_deployment.color = \$color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = true")
 
-save_state "$SERVICE_NAME" "$NEW_STATE"
+save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
 
 log_message "SUCCESS" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Traffic switched to $NEW_COLOR successfully"
 

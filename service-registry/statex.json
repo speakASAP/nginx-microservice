@@ -61,5 +61,16 @@
   ],
   "infrastructure_compose_file": "docker-compose.infrastructure.yml",
   "infrastructure_project_name": "statex_infrastructure",
-  "network": "nginx-network"
+  "network": "nginx-network",
+  "domains": {
+    "statex.cz": {
+      "services": ["frontend", "content-service", "submission-service", "user-portal"]
+    },
+    "ai.statex.cz": {
+      "services": ["ai-orchestrator"]
+    },
+    "api.statex.cz": {
+      "services": ["api-gateway"]
+    }
+  }
 }

@@ -31,8 +31,13 @@ else
     exit 1
 fi
 
-# Load state
-STATE=$(load_state "$SERVICE_NAME")
+# Load state - for statex service, get domain from registry
+DOMAIN=""
+if [ "$SERVICE_NAME" = "statex" ]; then
+    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
 # Determine previous color (rollback to opposite)
@@ -94,7 +99,7 @@ fi
 NEW_STATE=$(echo "$STATE" | jq --arg prev_color "$PREVIOUS_COLOR" --arg failed_color "$FAILED_COLOR" --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     ".active_color = \$prev_color | .\"$PREVIOUS_COLOR\".status = \"running\" | .\"$FAILED_COLOR\".status = \"stopped\" | .last_deployment.color = \$prev_color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = false")
 
-save_state "$SERVICE_NAME" "$NEW_STATE"
+save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
 
 log_message "SUCCESS" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Rollback to $PREVIOUS_COLOR completed successfully"
 

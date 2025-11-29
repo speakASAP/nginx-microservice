@@ -108,8 +108,45 @@ get_registry_value() {
 # Function to load state
 load_state() {
     local service_name="$1"
+    local domain="${2:-}"
     local state_file="${STATE_DIR}/${service_name}.json"
     
+    # For statex service, check if domain-specific state exists
+    if [ "$service_name" = "statex" ] && [ -n "$domain" ]; then
+        if [ -f "$state_file" ]; then
+            # Check if domain-specific state exists
+            local domain_state=$(jq -r ".domains[\"$domain\"] // empty" "$state_file" 2>/dev/null)
+            if [ -n "$domain_state" ] && [ "$domain_state" != "null" ]; then
+                # Return domain-specific state with service_name
+                jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null || {
+                    # Fallback: create domain state structure
+                    echo "{\"service_name\": \"statex\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
+                }
+                return
+            fi
+        fi
+        # Create initial domain-specific state
+        if [ ! -f "$state_file" ]; then
+            echo "{\"service_name\": \"statex\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
+        fi
+        # Add domain state if it doesn't exist
+        local current_state=$(cat "$state_file" 2>/dev/null || echo "{}")
+        local domain_state=$(echo "$current_state" | jq -r ".domains[\"$domain\"] // empty" 2>/dev/null)
+        if [ -z "$domain_state" ] || [ "$domain_state" = "null" ]; then
+            current_state=$(echo "$current_state" | jq --arg domain "$domain" '.domains[$domain] = {
+                "active_color": "blue",
+                "blue": {"status": "stopped", "deployed_at": null, "version": null},
+                "green": {"status": "stopped", "deployed_at": null, "version": null},
+                "last_deployment": {"color": "blue", "timestamp": null, "success": true}
+            }' 2>/dev/null)
+            echo "$current_state" | jq '.' > "$state_file" 2>/dev/null || true
+        fi
+        # Return domain-specific state
+        jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null
+        return
+    fi
+    
+    # Standard state loading for non-statex services or when domain not specified
     if [ ! -f "$state_file" ]; then
         print_warning "State file not found: $state_file. Creating initial state."
         # Create initial state with blue as active
@@ -148,10 +185,28 @@ EOF
 save_state() {
     local service_name="$1"
     local state_data="$2"
+    local domain="${3:-}"
     local state_file="${STATE_DIR}/${service_name}.json"
     
     mkdir -p "$STATE_DIR"
     
+    # For statex service with domain, save to domain-specific state
+    if [ "$service_name" = "statex" ] && [ -n "$domain" ]; then
+        if [ ! -f "$state_file" ]; then
+            echo "{\"service_name\": \"statex\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
+        fi
+        # Extract domain state from state_data (remove service_name and domain fields)
+        local domain_state=$(echo "$state_data" | jq 'del(.service_name, .domain)' 2>/dev/null)
+        # Update domain-specific state
+        local current_state=$(cat "$state_file" 2>/dev/null || echo "{\"service_name\": \"statex\", \"domains\": {}}")
+        echo "$current_state" | jq --arg domain "$domain" --argjson domain_state "$domain_state" '.domains[$domain] = $domain_state' > "$state_file" 2>/dev/null || {
+            print_error "Failed to save domain-specific state"
+            exit 1
+        }
+        return
+    fi
+    
+    # Standard state saving for non-statex services or when domain not specified
     if command -v jq >/dev/null 2>&1; then
         echo "$state_data" | jq '.' > "$state_file"
     else
@@ -184,8 +239,26 @@ get_inactive_color() {
 generate_upstream_blocks() {
     local service_name="$1"
     local active_color="$2"
+    local domain="${3:-}"
     local registry=$(load_service_registry "$service_name")
-    local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    
+    # Get service keys - filter by domain if specified
+    local service_keys=""
+    if [ -n "$domain" ]; then
+        # Check if domain-specific service list exists
+        local domain_services=$(echo "$registry" | jq -r ".domains[\"$domain\"].services[]? // empty" 2>/dev/null)
+        if [ -n "$domain_services" ]; then
+            # Use domain-specific services
+            service_keys="$domain_services"
+        else
+            # Fallback to all services
+            service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+        fi
+    else
+        # Use all services
+        service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    fi
+    
     local upstream_blocks=""
     
     while IFS= read -r service_key; do
@@ -270,8 +343,26 @@ generate_upstream_blocks() {
 # Function to generate proxy locations from service registry
 generate_proxy_locations() {
     local service_name="$1"
+    local domain="${2:-}"
     local registry=$(load_service_registry "$service_name")
-    local service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    
+    # Get service keys - filter by domain if specified
+    local service_keys=""
+    if [ -n "$domain" ]; then
+        # Check if domain-specific service list exists
+        local domain_services=$(echo "$registry" | jq -r ".domains[\"$domain\"].services[]? // empty" 2>/dev/null)
+        if [ -n "$domain_services" ]; then
+            # Use domain-specific services
+            service_keys="$domain_services"
+        else
+            # Fallback to all services
+            service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+        fi
+    else
+        # Use all services
+        service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+    fi
+    
     local proxy_locations=""
     
     # Check if frontend service exists
@@ -379,13 +470,13 @@ generate_blue_green_configs() {
     fi
     
     # Generate upstream blocks for blue config
-    local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue")
+    local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue" "$domain")
     
     # Generate upstream blocks for green config
-    local green_upstreams=$(generate_upstream_blocks "$service_name" "green")
+    local green_upstreams=$(generate_upstream_blocks "$service_name" "green" "$domain")
     
     # Generate proxy locations (same for both configs)
-    local proxy_locations=$(generate_proxy_locations "$service_name")
+    local proxy_locations=$(generate_proxy_locations "$service_name" "$domain")
     
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
@@ -484,6 +575,49 @@ ensure_blue_green_configs() {
     local service_name="$1"
     local domain="$2"
     local active_color="${3:-blue}"
+    
+    # For statex service, generate configs for all domains defined in registry
+    if [ "$service_name" = "statex" ]; then
+        local registry=$(load_service_registry "$service_name")
+        local domains=$(echo "$registry" | jq -r '.domains | keys[]' 2>/dev/null)
+        
+        if [ -n "$domains" ]; then
+            # Generate configs for all statex domains
+            while IFS= read -r statex_domain; do
+                local domain_state=$(load_state "$service_name" "$statex_domain" 2>/dev/null)
+                local domain_active_color=$(echo "$domain_state" | jq -r '.active_color // "blue"')
+                
+                local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+                local blue_green_dir="${config_dir}/blue-green"
+                mkdir -p "$blue_green_dir"
+                local blue_config="${blue_green_dir}/${statex_domain}.blue.conf"
+                local green_config="${blue_green_dir}/${statex_domain}.green.conf"
+                
+                # Check if both configs exist
+                if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
+                    log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $statex_domain"
+                    continue
+                fi
+                
+                # Generate configs if missing
+                log_message "INFO" "$service_name" "config" "ensure" "Generating blue and green configs for $statex_domain"
+                if ! generate_blue_green_configs "$service_name" "$statex_domain" "$domain_active_color"; then
+                    log_message "ERROR" "$service_name" "config" "ensure" "Failed to generate configs for $statex_domain"
+                    return 1
+                fi
+            done <<< "$domains"
+            return 0
+        fi
+    fi
+    
+    # For non-statex services or when domain is explicitly provided, use standard logic
+    # For statex service, get active_color from domain-specific state
+    if [ "$service_name" = "statex" ]; then
+        local state=$(load_state "$service_name" "$domain" 2>/dev/null)
+        if [ -n "$state" ]; then
+            active_color=$(echo "$state" | jq -r '.active_color // "blue"')
+        fi
+    fi
     
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
     local blue_green_dir="${config_dir}/blue-green"
