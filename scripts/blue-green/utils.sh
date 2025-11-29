@@ -293,41 +293,47 @@ generate_upstream_blocks() {
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
         
-        # Check if containers exist (for backup servers, mark as down if they don't exist)
-        local blue_exists=true
-        local green_exists=true
+        # Check if containers are RUNNING (nginx validates hostnames at startup, so containers must be running)
+        local blue_running=false
+        local green_running=false
         
-        # Check if blue container exists (running or stopped)
-        if ! docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${blue_container}$"; then
-            blue_exists=false
+        # Check if blue container is running (not just exists)
+        if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^${blue_container}$"; then
+            blue_running=true
         fi
         
-        # Check if green container exists (running or stopped)
-        if ! docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^${green_container}$"; then
-            green_exists=false
+        # Check if green container is running (not just exists)
+        if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^${green_container}$"; then
+            green_running=true
         fi
         
-        # Always add blue server (active or backup based on active_color)
-        # Skip backup server if container doesn't exist (nginx validates hostnames at startup)
-        if [ -n "$blue_weight" ] || [ "$blue_exists" = "true" ]; then
-            # Active server or backup server that exists
-            if [ -n "$blue_weight" ]; then
+        # Add blue server only if it's running (nginx validates hostnames at startup)
+        # If it's the active server but not running, skip it entirely
+        if [ -n "$blue_weight" ]; then
+            # Active server - only add if running
+            if [ "$blue_running" = "true" ]; then
                 upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-            else
+            fi
+        else
+            # Backup server - only add if running
+            if [ "$blue_running" = "true" ]; then
                 upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
 "
             fi
         fi
         
-        # Always add green server (active or backup based on active_color)
-        # Skip backup server if container doesn't exist (nginx validates hostnames at startup)
-        if [ -n "$green_weight" ] || [ "$green_exists" = "true" ]; then
-            # Active server or backup server that exists
-            if [ -n "$green_weight" ]; then
+        # Add green server only if it's running (nginx validates hostnames at startup)
+        # If it's the active server but not running, skip it entirely
+        if [ -n "$green_weight" ]; then
+            # Active server - only add if running
+            if [ "$green_running" = "true" ]; then
                 upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
 "
-            else
+            fi
+        else
+            # Backup server - only add if running
+            if [ "$green_running" = "true" ]; then
                 upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
 "
             fi
