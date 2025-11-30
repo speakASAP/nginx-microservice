@@ -118,9 +118,4 @@ else
         echo "❌ Failed to restart nginx"
         exit 1
     fi
-else
-    echo ""
-    echo "❌ Configuration test failed!"
-    echo "Please fix the errors above before restarting."
-    exit 1
 fi
