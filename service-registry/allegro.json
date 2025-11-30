@@ -13,6 +13,14 @@
       "health_timeout": 10,
       "health_retries": 3,
       "startup_time": 60
+    },
+    "frontend": {
+      "container_name_base": "allegro-frontend-service",
+      "port": 3410,
+      "health_endpoint": "/",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
     }
   },
   "shared_services": [
