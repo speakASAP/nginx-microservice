@@ -9,14 +9,19 @@ The `sync-containers-and-nginx.sh` script ensures that all nginx configuration s
 ## How It Works
 
 1. **Scans all services** in the service registry
-2. **Generates nginx configs** from registry (independent of container state)
-3. **Checks which containers are running** (blue, green, or both) - for informational purposes
-4. **Updates symlinks** to point to the expected color (from state) or running containers
-5. **Optionally starts missing containers** if needed (using deploy-smart.sh) - not required
-6. **Validates nginx configuration** (may fail if nginx container is not running, which is acceptable)
-7. **Optionally reloads/restarts nginx** if requested
+2. **Generates nginx configs** from registry to staging directory (independent of container state)
+3. **Validates each config** in isolation with existing valid configs to ensure compatibility
+4. **Applies validated configs** - only configs that pass validation are moved to blue-green directory
+5. **Rejects invalid configs** - invalid configs are moved to rejected directory with timestamps
+6. **Checks which containers are running** (blue, green, or both) - for informational purposes
+7. **Updates symlinks** to point to the expected color (from state) or running containers
+8. **Optionally starts missing containers** if needed (using deploy-smart.sh) - not required
+9. **Validates nginx configuration** (may fail if nginx container is not running, which is acceptable)
+10. **Optionally reloads/restarts nginx** if requested
 
 **Key Principle**: Configs are generated from the service registry, not from container state. Nginx can start and run with configs pointing to non-existent containers - it will return 502 errors until containers are available.
+
+**Config Validation**: New configs are validated before being applied. If a config would break nginx or conflict with existing configs, it is rejected and nginx continues running with existing valid configs. This ensures that one bad config doesn't affect all services.
 
 ## Usage
 
@@ -118,6 +123,48 @@ This script works seamlessly with the blue/green deployment system:
    ./scripts/sync-containers-and-nginx.sh
    ```
 
+## Config Validation System
+
+The system includes a robust validation mechanism:
+
+### Directory Structure
+
+```
+nginx/conf.d/
+├── staging/              # New configs before validation
+│   └── {domain}.{color}.conf
+├── blue-green/          # Validated configs (active)
+│   └── {domain}.{color}.conf
+├── rejected/            # Invalid configs (for debugging)
+│   └── {domain}.{color}.conf.{timestamp}
+└── {domain}.conf        # Symlinks to blue-green configs
+```
+
+### Validation Flow
+
+1. **Generate to Staging**: New configs are generated to `staging/` directory
+2. **Isolated Test**: Each config is tested with all existing valid configs
+3. **Apply if Valid**: Valid configs are moved to `blue-green/` directory
+4. **Reject if Invalid**: Invalid configs are moved to `rejected/` directory with timestamps
+
+### Benefits
+
+- **Nginx Always Runs**: Invalid configs are rejected, nginx continues with valid configs
+- **Isolated Failures**: One bad config doesn't break all services
+- **Debugging**: Rejected configs are saved with timestamps for analysis
+- **Automatic**: Validation happens automatically during config generation
+
+### Checking Rejected Configs
+
+If a config is rejected, check the rejected directory:
+
+```bash
+ls -la nginx/conf.d/rejected/
+cat nginx/conf.d/rejected/{domain}.{color}.conf.{timestamp}
+```
+
+Fix the config issue and regenerate the config - it will be validated again.
+
 ## Troubleshooting
 
 ### Symlink Points to Wrong Color
@@ -158,6 +205,29 @@ To check if containers are running:
 ```bash
 docker ps | grep {service-name}
 ```
+
+### Config Validation Failed
+
+If a config fails validation:
+
+1. **Check rejected directory**:
+   ```bash
+   ls -la nginx/conf.d/rejected/
+   ```
+
+2. **Review error logs**:
+   ```bash
+   tail -f logs/blue-green/deploy.log
+   ```
+
+3. **Fix the config issue** (syntax error, duplicate server_name, etc.)
+
+4. **Regenerate config** - it will be validated again:
+   ```bash
+   ./scripts/sync-containers-and-nginx.sh
+   ```
+
+**Note**: Nginx continues running with existing valid configs even if new configs fail validation.
 
 ## Script Output
 

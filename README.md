@@ -183,15 +183,18 @@ docker compose run --rm certbot /scripts/renew-cert.sh
 - ✅ **Nginx will return 502 errors** until containers become available (acceptable behavior)
 - ✅ **Nginx automatically connects** to containers when they start
 - ✅ **No dependency** - containers can start/stop independently of nginx
+- ✅ **Config Validation**: New configs are validated before being applied - invalid configs are rejected and nginx continues running with existing valid configs
 
 ### How It Works
 
 Nginx resolves hostnames at runtime via DNS, not at startup. This allows:
 
 1. **Config Generation**: Upstream blocks are always generated from the service registry, regardless of whether containers exist
-2. **Independent Startup**: Nginx starts successfully even if upstreams point to non-existent containers
-3. **Runtime Resolution**: When containers start, nginx automatically resolves their hostnames and connects
-4. **Graceful Degradation**: Nginx returns 502 errors for unavailable upstreams until containers are ready
+2. **Config Validation**: New configs are generated to a staging directory, validated in isolation with existing configs, and only applied if validation passes
+3. **Independent Startup**: Nginx starts successfully even if upstreams point to non-existent containers
+4. **Runtime Resolution**: When containers start, nginx automatically resolves their hostnames and connects
+5. **Graceful Degradation**: Nginx returns 502 errors for unavailable upstreams until containers are ready
+6. **Fail-Safe**: Invalid configs are rejected and moved to `conf.d/rejected/` directory - nginx continues running with existing valid configs
 
 ### Benefits
 
@@ -199,6 +202,23 @@ Nginx resolves hostnames at runtime via DNS, not at startup. This allows:
 - **Flexible deployment**: Containers can be started/stopped without affecting nginx
 - **Zero-downtime**: Nginx stays running during container deployments
 - **Simplified operations**: No need to coordinate nginx and container startup
+- **Config Safety**: Invalid configs are automatically rejected - one bad config won't break all services
+
+### Config Validation System
+
+The system includes a robust validation mechanism that ensures nginx always runs:
+
+1. **Staging Directory**: New configs are generated to `nginx/conf.d/staging/` first
+2. **Isolated Validation**: Each new config is tested with all existing valid configs to ensure compatibility
+3. **Safe Application**: Only validated configs are moved to `nginx/conf.d/blue-green/`
+4. **Rejection Handling**: Invalid configs are moved to `nginx/conf.d/rejected/` with timestamps for debugging
+5. **Nginx Resilience**: Nginx continues running with existing valid configs even if new configs fail validation
+
+**Example**: If you add a new service with a config that has a syntax error or conflicts with existing configs:
+- The invalid config is rejected and moved to `rejected/` directory
+- Nginx continues running with all existing valid configs
+- RabbitMQ, database, and logging servers remain unaffected
+- You can fix the config and try again
 
 For more details, see the [Container and Nginx Synchronization Guide](docs/CONTAINER_NGINX_SYNC.md).
 

@@ -293,6 +293,8 @@ for service_name in "${SERVICES[@]}"; do
     else
         FAILED_COUNT=$((FAILED_COUNT + 1))
         print_error "Failed to sync service $service_name"
+        # Continue with other services even if one fails
+        # Invalid configs should have been rejected during generation
     fi
     
     print_status ""
