@@ -283,74 +283,35 @@ generate_upstream_blocks() {
             green_backup=""
         fi
         
-        # Check container existence - nginx validates upstream hostnames at startup
-        # We only include containers that exist to avoid nginx startup failures
-        # Note: This is a pragmatic compromise - nginx DOES validate hostnames at startup
+        # Always generate upstream blocks - nginx will use resolver for runtime DNS resolution
+        # This allows nginx to start even when containers are not running
+        # Nginx will return 502 errors until containers become available, which is acceptable
         local blue_container="${container_base}-blue"
         local green_container="${container_base}-green"
-        
-        # Check if containers exist (using docker ps to check running or stopped containers)
-        local blue_exists=false
-        local green_exists=false
-        
-        # Use docker inspect to check if container exists (more reliable than docker ps)
-        if docker inspect "${blue_container}" >/dev/null 2>&1; then
-            blue_exists=true
-        fi
-        
-        if docker inspect "${green_container}" >/dev/null 2>&1; then
-            green_exists=true
-        fi
-        
-        # Build upstream block - only include containers that exist
-        # We must have at least one server, otherwise nginx will fail with "no servers are inside upstream"
-        if [ "$blue_exists" = "false" ] && [ "$green_exists" = "false" ]; then
-            # Neither container exists - include both as placeholders
-            # This allows nginx to start, but will return 502s until containers are created
-            # Note: This will still fail nginx startup validation, so we need at least one container
-            print_warning "Neither ${blue_container} nor ${green_container} exists - upstream will fail nginx validation"
-            # Include active color as placeholder (nginx will fail, but at least we tried)
-            if [ "$active_color" = "blue" ]; then
-                upstream_blocks="${upstream_blocks}upstream ${container_base} {
-    server ${blue_container}:${service_port} weight=100 max_fails=3 fail_timeout=30s;
-}
-"
-            else
-                upstream_blocks="${upstream_blocks}upstream ${container_base} {
-    server ${green_container}:${service_port} weight=100 max_fails=3 fail_timeout=30s;
-}
-"
-            fi
-            continue
-        fi
         
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
 
-        # Add blue server only if it exists
-        if [ "$blue_exists" = "true" ]; then
-            if [ -n "$blue_weight" ]; then
-                # Active server
-                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+        # Always include blue server (nginx will resolve at runtime via resolver)
+        if [ -n "$blue_weight" ]; then
+            # Active server
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-            else
-                # Backup server
-                upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+        else
+            # Backup server
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
 "
-            fi
         fi
         
-        # Add green server only if it exists
-        if [ "$green_exists" = "true" ]; then
-            if [ -n "$green_weight" ]; then
-                # Active server
-                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+        # Always include green server (nginx will resolve at runtime via resolver)
+        if [ -n "$green_weight" ]; then
+            # Active server
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
 "
-            else
-                # Backup server
-                upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+        else
+            # Backup server
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
 "
-            fi
         fi
         
         upstream_blocks="${upstream_blocks}}
@@ -410,9 +371,10 @@ generate_proxy_locations() {
 "
     elif [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ] && [ "$has_frontend" != "true" ]; then
         # If no frontend but backend exists, route root path to backend
-        proxy_locations="${proxy_locations}    # Backend-only service - root path routes to backend
+        proxy_locations="${proxy_locations}    # Backend-only service - root path routes to backend (using variables with resolver for runtime DNS resolution)
     location / {
-        proxy_pass http://${backend_container};
+        set \$BACKEND_UPSTREAM ${backend_container};
+        proxy_pass http://\$BACKEND_UPSTREAM;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
@@ -421,23 +383,25 @@ generate_proxy_locations() {
     
     # Generate backend/API location
     if [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ]; then
-        proxy_locations="${proxy_locations}    # API routes with stricter rate limiting - using upstream
+        proxy_locations="${proxy_locations}    # API routes with stricter rate limiting - using variables with resolver for runtime DNS resolution
     location /api/ {
         limit_req zone=api burst=20 nodelay;
-        
-        proxy_pass http://${backend_container}/api/;
+        set \$BACKEND_UPSTREAM ${backend_container};
+        proxy_pass http://\$BACKEND_UPSTREAM/api/;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
-    # WebSocket support - using upstream
+    # WebSocket support - using variables with resolver for runtime DNS resolution
     location /ws {
-        proxy_pass http://${backend_container}/ws;
+        set \$BACKEND_UPSTREAM ${backend_container};
+        proxy_pass http://\$BACKEND_UPSTREAM/ws;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
-    # Health check endpoint - using upstream
+    # Health check endpoint - using variables with resolver for runtime DNS resolution
     location /health {
-        proxy_pass http://${backend_container}/health;
+        set \$BACKEND_UPSTREAM ${backend_container};
+        proxy_pass http://\$BACKEND_UPSTREAM/health;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
         access_log off;
@@ -452,11 +416,11 @@ generate_proxy_locations() {
     if [ -n "$api_gateway_container" ] && [ "$api_gateway_container" != "null" ]; then
         # If api-gateway exists and we haven't added /api/ yet, add it
         if [ "$has_backend" != "true" ] || [ -z "$(echo "$proxy_locations" | grep "location /api/")" ]; then
-            proxy_locations="${proxy_locations}    # API Gateway routes - using upstream
+            proxy_locations="${proxy_locations}    # API Gateway routes - using variables with resolver for runtime DNS resolution
     location /api/ {
         limit_req zone=api burst=20 nodelay;
-        
-        proxy_pass http://${api_gateway_container}/api/;
+        set \$API_GATEWAY_UPSTREAM ${api_gateway_container};
+        proxy_pass http://\$API_GATEWAY_UPSTREAM/api/;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
@@ -813,13 +777,13 @@ test_nginx_config() {
         return $?
     fi
     
-    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
+    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker compose.yml"
     local max_wait=30
     local wait_interval=1
     local elapsed=0
     
     if [ ! -f "$nginx_compose_file" ]; then
-        print_error "Nginx docker-compose.yml not found: $nginx_compose_file"
+        print_error "Nginx docker compose.yml not found: $nginx_compose_file"
         return 1
     fi
     
@@ -884,10 +848,10 @@ test_nginx_config() {
 
 # Function to reload nginx
 reload_nginx() {
-    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
+    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker compose.yml"
     
     if [ ! -f "$nginx_compose_file" ]; then
-        print_error "Nginx docker-compose.yml not found: $nginx_compose_file"
+        print_error "Nginx docker compose.yml not found: $nginx_compose_file"
         return 1
     fi
     
@@ -1167,7 +1131,7 @@ kill_container_if_exists() {
     return 0
 }
 
-# Function to extract host ports from docker-compose file
+# Function to extract host ports from docker compose file
 # Usage: get_host_ports_from_compose <compose_file> [service_name]
 get_host_ports_from_compose() {
     local compose_file="$1"
