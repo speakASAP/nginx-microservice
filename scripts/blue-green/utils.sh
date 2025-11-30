@@ -292,25 +292,27 @@ generate_upstream_blocks() {
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
 "
 
-        # Always include blue server (nginx will resolve at runtime via resolver)
+        # Always include blue server with resolve directive (nginx will resolve at runtime via resolver)
+        # The 'resolve' directive tells nginx to resolve hostnames at runtime, not at startup
+        # This allows nginx to start even when containers don't exist yet
         if [ -n "$blue_weight" ]; then
             # Active server
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port} weight=${blue_weight}${blue_backup} max_fails=3 fail_timeout=30s resolve;
 "
         else
             # Backup server
-            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${blue_container}:${service_port}${blue_backup} max_fails=3 fail_timeout=30s resolve;
 "
         fi
         
-        # Always include green server (nginx will resolve at runtime via resolver)
+        # Always include green server with resolve directive (nginx will resolve at runtime via resolver)
         if [ -n "$green_weight" ]; then
             # Active server
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port} weight=${green_weight}${green_backup} max_fails=3 fail_timeout=30s resolve;
 "
         else
             # Backup server
-            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s;
+            upstream_blocks="${upstream_blocks}    server ${green_container}:${service_port}${green_backup} max_fails=3 fail_timeout=30s resolve;
 "
         fi
         
@@ -609,9 +611,19 @@ validate_config_in_isolation() {
     else
         # Get actual error message
         error_output=$(docker compose -f "$nginx_compose_file" exec -T nginx nginx -t -c "$temp_nginx_conf" 2>&1 || true)
-        print_error "Config validation failed for ${domain}.${color}.conf:"
-        echo "$error_output" | sed 's/^/  /'
-        test_result=1
+        
+        # Check for critical errors that would break nginx
+        if echo "$error_output" | grep -qE "host not found in upstream|no servers are inside upstream"; then
+            print_error "Config validation FAILED: Critical error detected:"
+            echo "$error_output" | grep -E "host not found in upstream|no servers are inside upstream" | sed 's/^/  /'
+            print_error "This config would break nginx and has been rejected"
+            print_error "Upstream blocks must use 'resolve' directive for runtime DNS resolution"
+            test_result=1
+        else
+            print_error "Config validation failed for ${domain}.${color}.conf:"
+            echo "$error_output" | sed 's/^/  /'
+            test_result=1
+        fi
     fi
     
     # Cleanup test directory in container
