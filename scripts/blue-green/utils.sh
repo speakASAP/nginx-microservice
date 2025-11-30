@@ -369,10 +369,10 @@ generate_proxy_locations() {
     
     # Generate frontend location (root path) - using shared include
     if [ "$has_frontend" = "true" ] && [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
-        # Use container name with color suffix for runtime DNS resolution
-        local frontend_container_name="${frontend_container}-${active_color}"
+        # Use upstream block name (container_base without color) - upstream block includes port and resolve directive
+        # The upstream block is named after container_base and includes both blue and green servers with ports
         proxy_locations="${proxy_locations}    # Frontend service - root path
-    set \$FRONTEND_UPSTREAM ${frontend_container_name};
+    set \$FRONTEND_UPSTREAM ${frontend_container};
     include /etc/nginx/includes/frontend-location.conf;
     
 "
