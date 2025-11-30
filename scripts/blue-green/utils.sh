@@ -470,6 +470,61 @@ validate_config_in_isolation() {
         return 1
     fi
     
+    # PRE-VALIDATION: Check for empty upstream blocks before testing with nginx
+    # This catches critical errors that would break nginx - nginx requires at least one server in each upstream block
+    # Pattern: upstream name { followed by } without any server lines in between
+    if grep -qE "^upstream\s+\S+\s*\{$" "$staging_config_path"; then
+        # Check each upstream block for empty servers
+        local in_upstream=false
+        local upstream_name=""
+        local has_server=false
+        local empty_upstreams=""
+        
+        while IFS= read -r line; do
+            # Detect upstream block start
+            if echo "$line" | grep -qE "^upstream\s+\S+\s*\{$"; then
+                if [ "$in_upstream" = "true" ] && [ "$has_server" = "false" ]; then
+                    # Previous upstream was empty
+                    empty_upstreams="${empty_upstreams}${upstream_name}\n"
+                fi
+                upstream_name=$(echo "$line" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/')
+                in_upstream=true
+                has_server=false
+                continue
+            fi
+            
+            # Detect upstream block end
+            if [ "$in_upstream" = "true" ] && echo "$line" | grep -qE "^\s*\}$"; then
+                if [ "$has_server" = "false" ]; then
+                    # This upstream block is empty
+                    empty_upstreams="${empty_upstreams}${upstream_name}\n"
+                fi
+                in_upstream=false
+                has_server=false
+                continue
+            fi
+            
+            # Check for server lines within upstream block
+            if [ "$in_upstream" = "true" ] && echo "$line" | grep -qE "^\s*server\s+"; then
+                has_server=true
+            fi
+        done < "$staging_config_path"
+        
+        # Check last upstream if file ends while in upstream block
+        if [ "$in_upstream" = "true" ] && [ "$has_server" = "false" ]; then
+            empty_upstreams="${empty_upstreams}${upstream_name}\n"
+        fi
+        
+        if [ -n "$empty_upstreams" ]; then
+            print_error "Config validation FAILED: Empty upstream blocks detected:"
+            echo -e "$empty_upstreams" | sed 's/^/  - /' | sed '/^[[:space:]]*$/d'
+            print_error "Nginx requires at least one server in each upstream block"
+            print_error "This config would break nginx and has been rejected"
+            log_message "ERROR" "$service_name" "$color" "validate" "Config rejected: Empty upstream blocks found in ${domain}.${color}.conf"
+            return 1
+        fi
+    fi
+    
     local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
     local blue_green_dir="${config_dir}/blue-green"
     local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
@@ -637,10 +692,11 @@ generate_blue_green_configs() {
     # Generate proxy locations for green config - uses variables with resolver
     local green_proxy_locations=$(generate_proxy_locations "$service_name" "$domain" "green")
     
-    # Generate empty upstream blocks - we use variables in proxy_pass instead for runtime DNS resolution
-    # This allows nginx to start even when containers are not running
-    local blue_upstreams=""
-    local green_upstreams=""
+    # Generate upstream blocks for blue and green configs
+    # Upstream blocks are required by nginx even if we use variables in proxy_pass
+    # This allows nginx to start even when containers are not running (will return 502 until containers start)
+    local blue_upstreams=$(generate_upstream_blocks "$service_name" "$domain" "blue")
+    local green_upstreams=$(generate_upstream_blocks "$service_name" "$domain" "green")
     
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
