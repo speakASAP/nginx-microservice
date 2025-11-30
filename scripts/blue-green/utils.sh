@@ -416,11 +416,13 @@ generate_proxy_locations() {
     if [ -n "$api_gateway_container" ] && [ "$api_gateway_container" != "null" ]; then
         # If api-gateway exists and we haven't added /api/ yet, add it
         if [ "$has_backend" != "true" ] || [ -z "$(echo "$proxy_locations" | grep "location /api/")" ]; then
+            # Get port for api-gateway
+            local api_gateway_port=$(echo "$registry" | jq -r '.services["api-gateway"].port // "80"')
             proxy_locations="${proxy_locations}    # API Gateway routes - using variables with resolver for runtime DNS resolution
     location /api/ {
         limit_req zone=api burst=20 nodelay;
         set \$API_GATEWAY_UPSTREAM ${api_gateway_container};
-        proxy_pass http://\$API_GATEWAY_UPSTREAM/api/;
+        proxy_pass http://\$API_GATEWAY_UPSTREAM:${api_gateway_port}/api/;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
@@ -451,14 +453,13 @@ generate_blue_green_configs() {
         return 1
     fi
     
-    # Generate upstream blocks for blue config
-    local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue" "$domain")
-    
-    # Generate upstream blocks for green config
-    local green_upstreams=$(generate_upstream_blocks "$service_name" "green" "$domain")
-    
-    # Generate proxy locations (same for both configs)
+    # Generate proxy locations (same for both configs) - uses variables with resolver
     local proxy_locations=$(generate_proxy_locations "$service_name" "$domain")
+    
+    # Generate empty upstream blocks - we use variables in proxy_pass instead for runtime DNS resolution
+    # This allows nginx to start even when containers are not running
+    local blue_upstreams=""
+    local green_upstreams=""
     
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
