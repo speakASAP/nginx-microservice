@@ -401,13 +401,11 @@ generate_proxy_locations() {
         fi
     done <<< "$service_keys"
     
-    # Generate frontend location (root path)
+    # Generate frontend location (root path) - using shared include
     if [ "$has_frontend" = "true" ] && [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
-        proxy_locations="${proxy_locations}    # Frontend routes - using upstream
-    location / {
-        proxy_pass http://${frontend_container};
-        include /etc/nginx/includes/common-proxy-settings.conf;
-    }
+        proxy_locations="${proxy_locations}    # Frontend service - root path
+    set \$FRONTEND_UPSTREAM ${frontend_container};
+    include /etc/nginx/includes/frontend-location.conf;
     
 "
     elif [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ] && [ "$has_frontend" != "true" ]; then
