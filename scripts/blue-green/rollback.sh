@@ -16,7 +16,6 @@ fi
 
 # Load service registry
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
-DOMAIN=$(echo "$REGISTRY" | jq -r '.domain')
 DOCKER_PROJECT_BASE=$(echo "$REGISTRY" | jq -r '.docker_project_base')
 SERVICE_PATH=$(echo "$REGISTRY" | jq -r '.service_path')
 PRODUCTION_PATH=$(echo "$REGISTRY" | jq -r '.production_path')
@@ -32,11 +31,22 @@ else
 fi
 
 # Load state - for statex service, get domain from registry
+# For other services, get domain from registry
 DOMAIN=""
 if [ "$SERVICE_NAME" = "statex" ]; then
-    REGISTRY=$(load_service_registry "$SERVICE_NAME")
+    # For statex, domain is in registry but we need to get it from state or use default
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+else
+    # For other services, get domain from registry
     DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
 fi
+
+# Validate domain is not empty
+if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "null" ]; then
+    print_error "Domain not found in registry for service: $SERVICE_NAME"
+    exit 1
+fi
+
 STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 

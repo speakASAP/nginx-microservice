@@ -16,14 +16,16 @@ fi
 
 # Load service registry
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
-DOMAIN=$(echo "$REGISTRY" | jq -r '.domain')
 
-# Load state - for statex service, get domain from registry
+# Get domain from registry
 DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
-if [ "$SERVICE_NAME" = "statex" ]; then
-    REGISTRY=$(load_service_registry "$SERVICE_NAME")
-    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+
+# Validate domain is not empty
+if [ -z "$DOMAIN" ] || [ "$DOMAIN" = "null" ]; then
+    print_error "Domain not found in registry for service: $SERVICE_NAME"
+    exit 1
 fi
+
 STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
 ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
 
