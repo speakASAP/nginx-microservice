@@ -15,13 +15,13 @@ Implement a system where nginx always runs independently of container state, and
 
 ### Current Flow
 
-```
+```text
 Generate Config → Write to conf.d/blue-green/ → Create Symlink → Test All Configs → Reload Nginx
 ```
 
 ### New Flow
 
-```
+```text
 Generate Config → Write to conf.d/staging/ → Validate in Isolation → If Valid: Move to conf.d/blue-green/ → Create Symlink → Reload Nginx
                                                                    → If Invalid: Reject and Log Error → Keep Nginx Running
 ```
@@ -152,7 +152,7 @@ Generate Config → Write to conf.d/staging/ → Validate in Isolation → If Va
 
 ### Staging Directory Structure
 
-```
+```text
 nginx/conf.d/
 ├── staging/              # New configs before validation
 │   └── {domain}.{color}.conf
