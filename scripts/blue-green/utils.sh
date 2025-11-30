@@ -289,7 +289,9 @@ generate_upstream_blocks() {
         local blue_container="${container_base}-blue"
         local green_container="${container_base}-green"
         
+        # Use zone for shared memory when using resolve directive (required for runtime DNS resolution)
         upstream_blocks="${upstream_blocks}upstream ${container_base} {
+    zone ${container_base}_zone 64k;
 "
 
         # Always include blue server with resolve directive (nginx will resolve at runtime via resolver)
