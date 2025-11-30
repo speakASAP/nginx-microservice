@@ -777,7 +777,7 @@ test_nginx_config() {
         return $?
     fi
     
-    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker compose.yml"
+    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
     local max_wait=30
     local wait_interval=1
     local elapsed=0
@@ -848,7 +848,7 @@ test_nginx_config() {
 
 # Function to reload nginx
 reload_nginx() {
-    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker compose.yml"
+    local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
     
     if [ ! -f "$nginx_compose_file" ]; then
         print_error "Nginx docker compose.yml not found: $nginx_compose_file"
