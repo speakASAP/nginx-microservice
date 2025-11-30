@@ -325,6 +325,7 @@ generate_upstream_blocks() {
 generate_proxy_locations() {
     local service_name="$1"
     local domain="${2:-}"
+    local active_color="${3:-blue}"
     local registry=$(load_service_registry "$service_name")
     
     # Get service keys - filter by domain if specified
@@ -364,16 +365,19 @@ generate_proxy_locations() {
     
     # Generate frontend location (root path) - using shared include
     if [ "$has_frontend" = "true" ] && [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
+        # Use container name with color suffix for runtime DNS resolution
+        local frontend_container_name="${frontend_container}-${active_color}"
         proxy_locations="${proxy_locations}    # Frontend service - root path
-    set \$FRONTEND_UPSTREAM ${frontend_container};
+    set \$FRONTEND_UPSTREAM ${frontend_container_name};
     include /etc/nginx/includes/frontend-location.conf;
     
 "
     elif [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ] && [ "$has_frontend" != "true" ]; then
         # If no frontend but backend exists, route root path to backend
+        local backend_container_name="${backend_container}-${active_color}"
         proxy_locations="${proxy_locations}    # Backend-only service - root path routes to backend (using variables with resolver for runtime DNS resolution)
     location / {
-        set \$BACKEND_UPSTREAM ${backend_container};
+        set \$BACKEND_UPSTREAM ${backend_container_name};
         proxy_pass http://\$BACKEND_UPSTREAM;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
@@ -383,24 +387,25 @@ generate_proxy_locations() {
     
     # Generate backend/API location
     if [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ]; then
+        local backend_container_name="${backend_container}-${active_color}"
         proxy_locations="${proxy_locations}    # API routes with stricter rate limiting - using variables with resolver for runtime DNS resolution
     location /api/ {
         limit_req zone=api burst=20 nodelay;
-        set \$BACKEND_UPSTREAM ${backend_container};
+        set \$BACKEND_UPSTREAM ${backend_container_name};
         proxy_pass http://\$BACKEND_UPSTREAM/api/;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
     # WebSocket support - using variables with resolver for runtime DNS resolution
     location /ws {
-        set \$BACKEND_UPSTREAM ${backend_container};
+        set \$BACKEND_UPSTREAM ${backend_container_name};
         proxy_pass http://\$BACKEND_UPSTREAM/ws;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
     # Health check endpoint - using variables with resolver for runtime DNS resolution
     location /health {
-        set \$BACKEND_UPSTREAM ${backend_container};
+        set \$BACKEND_UPSTREAM ${backend_container_name};
         proxy_pass http://\$BACKEND_UPSTREAM/health;
         proxy_http_version 1.1;
         proxy_set_header Host \$host;
@@ -418,10 +423,12 @@ generate_proxy_locations() {
         if [ "$has_backend" != "true" ] || [ -z "$(echo "$proxy_locations" | grep "location /api/")" ]; then
             # Get port for api-gateway
             local api_gateway_port=$(echo "$registry" | jq -r '.services["api-gateway"].port // "80"')
+            # Use container name with color suffix for runtime DNS resolution
+            local api_gateway_container_name="${api_gateway_container}-${active_color}"
             proxy_locations="${proxy_locations}    # API Gateway routes - using variables with resolver for runtime DNS resolution
     location /api/ {
         limit_req zone=api burst=20 nodelay;
-        set \$API_GATEWAY_UPSTREAM ${api_gateway_container};
+        set \$API_GATEWAY_UPSTREAM ${api_gateway_container_name};
         proxy_pass http://\$API_GATEWAY_UPSTREAM:${api_gateway_port}/api/;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
@@ -453,8 +460,11 @@ generate_blue_green_configs() {
         return 1
     fi
     
-    # Generate proxy locations (same for both configs) - uses variables with resolver
-    local proxy_locations=$(generate_proxy_locations "$service_name" "$domain")
+    # Generate proxy locations for blue config - uses variables with resolver
+    local blue_proxy_locations=$(generate_proxy_locations "$service_name" "$domain" "blue")
+    
+    # Generate proxy locations for green config - uses variables with resolver
+    local green_proxy_locations=$(generate_proxy_locations "$service_name" "$domain" "green")
     
     # Generate empty upstream blocks - we use variables in proxy_pass instead for runtime DNS resolution
     # This allows nginx to start even when containers are not running
@@ -468,7 +478,7 @@ generate_blue_green_configs() {
     local temp_python=$(mktemp)
     
     echo "$blue_upstreams" > "$temp_upstreams"
-    echo "$proxy_locations" > "$temp_locations"
+    echo "$blue_proxy_locations" > "$temp_locations"
     
     # Create Python script
     cat > "$temp_python" <<'PYTHON_SCRIPT'
@@ -525,8 +535,9 @@ PYTHON_SCRIPT
             "$template_file" > "$blue_config"
     fi
     
-    # Update upstreams for green config
+    # Update upstreams and locations for green config
     echo "$green_upstreams" > "$temp_upstreams"
+    echo "$green_proxy_locations" > "$temp_locations"
     
     # Generate green config
     if command -v python3 >/dev/null 2>&1; then
