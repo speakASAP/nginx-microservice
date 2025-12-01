@@ -253,7 +253,7 @@ start_application() {
             print_error "Health check failed for $service_name"
             print_detail "Health check output:"
             "${BLUE_GREEN_DIR}/health-check.sh" "$service_name" 2>&1 | sed 's/^/  /' || true
-            exit 1
+            return 1
         fi
     fi
     
