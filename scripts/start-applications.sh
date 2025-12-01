@@ -13,13 +13,32 @@ BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 # Source shared utilities
 source "${SCRIPT_DIR}/startup-utils.sh"
 
-# Applications list
-APPLICATIONS=(
-    "allegro"                    # Needs postgres + redis
-    "crypto-ai-agent"            # Needs postgres + redis
-    "statex"                     # Needs postgres + redis
-    "e-commerce"                 # Needs postgres + redis
-)
+# Function to discover all applications from service-registry directory
+discover_applications() {
+    local registry_dir="$1"
+    local services=()
+    
+    if [ ! -d "$registry_dir" ]; then
+        print_error "Service registry directory not found: $registry_dir"
+        return 1
+    fi
+    
+    # Find all .json files in service-registry (excluding backups and microservices)
+    while IFS= read -r registry_file; do
+        local service_name=$(basename "$registry_file" .json)
+        # Skip backup files, microservices, and infrastructure services
+        if [[ "$service_name" != *".backup" ]] && \
+           [[ "$service_name" != *".bak" ]] && \
+           [[ "$service_name" != *"-microservice" ]] && \
+           [[ "$service_name" != "nginx-microservice" ]] && \
+           [[ "$service_name" != "database-server" ]]; then
+            services+=("$service_name")
+        fi
+    done < <(find "$registry_dir" -maxdepth 1 -name "*.json" -type f 2>/dev/null | sort)
+    
+    # Output services as newline-separated list
+    printf '%s\n' "${services[@]}"
+}
 
 # Parse arguments
 SINGLE_SERVICE=""
@@ -37,6 +56,32 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Discover all applications from registry at the start
+print_status "Discovering applications from registry..."
+APPLICATIONS=($(discover_applications "$REGISTRY_DIR"))
+
+if [ ${#APPLICATIONS[@]} -eq 0 ]; then
+    print_error "No applications found in registry directory: $REGISTRY_DIR"
+    exit 1
+fi
+
+print_status "Found ${#APPLICATIONS[@]} application(s) to check:"
+for app in "${APPLICATIONS[@]}"; do
+    print_detail "  - $app"
+done
+
+# If --service flag is used, filter to only that application
+if [ -n "$SINGLE_SERVICE" ]; then
+    if [[ " ${APPLICATIONS[@]} " =~ " ${SINGLE_SERVICE} " ]]; then
+        APPLICATIONS=("$SINGLE_SERVICE")
+        print_status "Filtered to single application: $SINGLE_SERVICE"
+    else
+        print_error "Application '$SINGLE_SERVICE' not found in registry"
+        print_error "Available applications: ${APPLICATIONS[*]}"
+        exit 1
+    fi
+fi
+
 # Function to check if service registry exists
 service_exists() {
     local service_name="$1"
@@ -53,7 +98,7 @@ start_application() {
     
     if ! service_exists "$service_name"; then
         print_error "Service registry not found: ${service_name}.json"
-        exit 1
+        return 1
     fi
     
     print_detail "Service registry file: ${REGISTRY_DIR}/${service_name}.json"
@@ -61,7 +106,7 @@ start_application() {
     # Use deploy-smart.sh to start the service
     if [ ! -f "${BLUE_GREEN_DIR}/deploy-smart.sh" ]; then
         print_error "deploy-smart.sh not found at: ${BLUE_GREEN_DIR}/deploy-smart.sh"
-        exit 1
+        return 1
     fi
     
     # Check if service containers are already running
@@ -97,7 +142,7 @@ start_application() {
                             print_error "Container ${container_name} is in RESTARTING state - zero tolerance policy"
                             print_detail "Container logs (last 30 lines):"
                             docker logs --tail 30 "$container_name" 2>&1 | sed 's/^/  /' || true
-                            exit 1
+                            return 1
                         fi
                     done
                 fi
@@ -112,7 +157,7 @@ start_application() {
                     print_error "Health check failed for $service_name"
                     print_detail "Health check output:"
                     "${BLUE_GREEN_DIR}/health-check.sh" "$service_name" 2>&1 | sed 's/^/  /' || true
-                    exit 1
+                    return 1
                 fi
             fi
             
@@ -155,7 +200,7 @@ start_application() {
             fi
         fi
         
-        exit 1
+        return 1
     fi
     
     print_success "Application $service_name deployment completed successfully"
@@ -169,7 +214,7 @@ start_application() {
                 print_success "Nginx configuration validated for $service_name"
             else
                 print_error "Nginx configuration validation failed for $service_name"
-                exit 1
+                return 1
             fi
         fi
     fi
@@ -191,7 +236,7 @@ start_application() {
                             print_error "Container ${container_name} is in RESTARTING state - zero tolerance policy"
                             print_detail "Container logs (last 30 lines):"
                             docker logs --tail 30 "$container_name" 2>&1 | sed 's/^/  /' || true
-                            exit 1
+                            return 1
                         fi
                     fi
                 done
@@ -228,43 +273,88 @@ print_status "=========================================="
 print_status "Starting Applications Phase"
 print_status "=========================================="
 
-service_count=0
+# Arrays to track results
+declare -a SUCCESSFUL_APPLICATIONS=()
+declare -a FAILED_APPLICATIONS=()
+
+service_count=${#APPLICATIONS[@]}
 success_count=0
 fail_count=0
 
+print_status ""
+print_status "Checking all $service_count application(s)..."
+print_status ""
+
+# Check all applications - don't stop on first failure
 for service in "${APPLICATIONS[@]}"; do
-    if [ -n "$SINGLE_SERVICE" ] && [ "$SINGLE_SERVICE" != "$service" ]; then
+    print_status "========================================"
+    print_status "Application: $service ($((${#SUCCESSFUL_APPLICATIONS[@]} + ${#FAILED_APPLICATIONS[@]} + 1))/$service_count)"
+    print_status "========================================"
+    
+    # Check if service registry exists
+    if ! service_exists "$service"; then
+        print_error "Service registry not found: ${service}.json"
+        FAILED_APPLICATIONS+=("$service (registry missing)")
+        fail_count=$((fail_count + 1))
+        print_status ""
         continue
     fi
     
-    service_count=$((service_count + 1))
-    print_status ""
-    print_status "Application $service_count/${#APPLICATIONS[@]}: $service"
-    
+    # Try to start/check the application
     if start_application "$service"; then
+        SUCCESSFUL_APPLICATIONS+=("$service")
         success_count=$((success_count + 1))
-        print_success "Application $service started successfully"
+        print_success "Application $service ${GREEN_CHECK} started and verified successfully"
     else
+        exit_code=$?
+        FAILED_APPLICATIONS+=("$service (exit code: $exit_code)")
         fail_count=$((fail_count + 1))
-        print_error "Application $service ${RED_X} failed to start"
-        print_error "Stopping startup process due to error"
-        exit 1
+        print_error "Application $service ${RED_X} failed to start or verify"
     fi
     
+    print_status ""
+    
     # Small delay between services
-    print_detail "Waiting 2 seconds before starting next service..."
-    sleep 2
+    if [ $((${#SUCCESSFUL_APPLICATIONS[@]} + ${#FAILED_APPLICATIONS[@]})) -lt $service_count ]; then
+        print_detail "Waiting 1 second before checking next application..."
+        sleep 1
+    fi
 done
 
+# Final summary
 print_status ""
-print_status "Applications summary: $success_count succeeded, $fail_count failed out of $service_count total"
+print_status "=========================================="
+print_status "Applications Phase Summary"
+print_status "=========================================="
+print_status "Total applications to check: $service_count"
+print_status "Successfully started and verified: $success_count"
+print_status "Failed: $fail_count"
+print_status ""
 
-if [ $fail_count -gt 0 ]; then
-    print_error "Applications phase completed with errors"
-    exit 1
+if [ $success_count -gt 0 ]; then
+    print_success "Successfully checked applications:"
+    for app in "${SUCCESSFUL_APPLICATIONS[@]}"; do
+        print_detail "  ${GREEN_CHECK} $app"
+    done
+    print_status ""
 fi
 
-print_success "Applications phase completed successfully"
+if [ $fail_count -gt 0 ]; then
+    print_error "Failed applications:"
+    for app in "${FAILED_APPLICATIONS[@]}"; do
+        print_detail "  ${RED_X} $app"
+    done
+    print_status ""
+fi
 
-exit 0
+# Only exit successfully if ALL applications passed
+if [ $fail_count -eq 0 ] && [ $success_count -eq $service_count ]; then
+    print_success "All $service_count application(s) started and verified successfully"
+    exit 0
+else
+    print_error "Applications phase completed with errors"
+    print_error "Expected: $service_count applications, Success: $success_count, Failed: $fail_count"
+    print_error "Script will exit with error - all applications must pass for success"
+    exit 1
+fi
 
