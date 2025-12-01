@@ -51,16 +51,69 @@ start_nginx_microservice() {
         print_error "nginx-microservice is in RESTARTING state - zero tolerance policy"
         run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
     elif [ $status_code -eq 0 ]; then
-        # Container is running - check if it's healthy
+        # Container is running - check if it's healthy (zero tolerance for unhealthy)
         print_success "nginx-microservice is ${GREEN_CHECK} already running"
         print_detail "Container status:"
         docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
         
-        # According to nginx independence principles:
-        # - Nginx should start and run even if some configs are invalid
-        # - New configs are validated BEFORE being applied (via validate_config_in_isolation)
-        # - Existing configs with errors (like "host not found") are acceptable - nginx will return 502s
-        # - We only check if nginx process is actually running, not if config test passes
+        # Zero tolerance for unhealthy status - must run diagnostic and exit
+        local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+        if echo "$container_status_full" | grep -qiE "unhealthy"; then
+            print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+            print_detail "Container status: $container_status_full"
+            print_detail "Container logs (last 30 lines):"
+            docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+        fi
+        
+        # Check nginx config directories according to validation system
+        local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+        local staging_dir="${config_dir}/staging"
+        local rejected_dir="${config_dir}/rejected"
+        local blue_green_dir="${config_dir}/blue-green"
+        
+        print_status "Checking nginx config directories..."
+        
+        # Check for configs in staging directory (pending validation)
+        if [ -d "$staging_dir" ]; then
+            local staging_configs=$(ls -A "$staging_dir"/*.conf 2>/dev/null | head -1)
+            if [ -n "$staging_configs" ]; then
+                print_warning "Found configs in staging directory (pending validation):"
+                ls -latr "$staging_dir"/*.conf 2>/dev/null | sed 's/^/  /' || true
+                print_detail "These configs are waiting to be validated before being applied to nginx"
+            else
+                print_detail "No configs in staging directory"
+            fi
+        else
+            print_detail "Staging directory does not exist"
+        fi
+        
+        # Check for rejected configs
+        if [ -d "$rejected_dir" ]; then
+            local rejected_configs=$(ls -A "$rejected_dir"/*.conf* 2>/dev/null | head -1)
+            if [ -n "$rejected_configs" ]; then
+                print_warning "Found rejected configs (invalid configs that were not applied):"
+                ls -latr "$rejected_dir"/*.conf* 2>/dev/null | sed 's/^/  /' || true
+                print_detail "These configs failed validation and were rejected - nginx continues with existing valid configs"
+            else
+                print_detail "No rejected configs"
+            fi
+        else
+            print_detail "Rejected directory does not exist"
+        fi
+        
+        # Show validated configs in blue-green directory
+        if [ -d "$blue_green_dir" ]; then
+            local blue_green_configs=$(ls -A "$blue_green_dir"/*.conf 2>/dev/null | head -1)
+            if [ -n "$blue_green_configs" ]; then
+                print_detail "Validated configs in blue-green directory (active):"
+                ls -latr "$blue_green_dir"/*.conf 2>/dev/null | sed 's/^/  /' || true
+            else
+                print_detail "No validated configs in blue-green directory"
+            fi
+        else
+            print_detail "Blue-green directory does not exist"
+        fi
         
         # Check if nginx process is actually running inside container
         print_status "Verifying nginx process is running..."
@@ -72,27 +125,11 @@ start_nginx_microservice() {
         else
             # Nginx process is not running - this is a real problem
             print_error "Nginx process is NOT running - nginx failed to start"
-            local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
             print_detail "Container status: $container_status_full"
             print_detail "Container logs (last 30 lines):"
             docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
             print_error "Nginx must be running - zero tolerance policy"
             run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "Nginx process is not running"
-        fi
-        
-        # Informational: Test nginx configuration (but don't fail if it has errors)
-        # Config errors like "host not found in upstream" are expected when containers aren't running
-        # New configs are validated before being applied, so existing configs with errors are acceptable
-        print_status "Testing nginx configuration (informational only)..."
-        if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
-            print_success "Nginx configuration test ${GREEN_CHECK} passed"
-        else
-            print_warning "Nginx configuration test ${RED_X} failed (this is acceptable if containers aren't running)"
-            print_detail "Nginx config test output:"
-            docker compose exec -T nginx nginx -t 2>&1 | sed 's/^/  /' | head -5 || true
-            print_detail "Note: Config errors like 'host not found in upstream' are expected when containers aren't running."
-            print_detail "Nginx will return 502s until containers are available - this is expected behavior."
-            print_detail "New service configs are validated before being applied - invalid configs are automatically rejected."
         fi
         
         return 0
@@ -169,16 +206,69 @@ start_nginx_microservice() {
                 print_error "nginx-microservice is in RESTARTING state after $attempt attempts"
                 run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
             elif [ $status_code -eq 0 ]; then
-                # Container is running - check if it's healthy
+                # Container is running - check if it's healthy (zero tolerance for unhealthy)
                 print_success "nginx-microservice is ${GREEN_CHECK} running"
                 print_detail "Container status:"
                 docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
                 
-                # According to nginx independence principles:
-                # - Nginx should start and run even if some configs are invalid
-                # - New configs are validated BEFORE being applied (via validate_config_in_isolation)
-                # - Existing configs with errors (like "host not found") are acceptable - nginx will return 502s
-                # - We only check if nginx process is actually running, not if config test passes
+                # Zero tolerance for unhealthy status - must run diagnostic and exit
+                local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+                if echo "$container_status_full" | grep -qiE "unhealthy"; then
+                    print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+                    print_detail "Container status: $container_status_full"
+                    print_detail "Container logs (last 30 lines):"
+                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+                fi
+                
+                # Check nginx config directories according to validation system
+                local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+                local staging_dir="${config_dir}/staging"
+                local rejected_dir="${config_dir}/rejected"
+                local blue_green_dir="${config_dir}/blue-green"
+                
+                print_status "Checking nginx config directories..."
+                
+                # Check for configs in staging directory (pending validation)
+                if [ -d "$staging_dir" ]; then
+                    local staging_configs=$(ls -A "$staging_dir"/*.conf 2>/dev/null | head -1)
+                    if [ -n "$staging_configs" ]; then
+                        print_warning "Found configs in staging directory (pending validation):"
+                        ls -latr "$staging_dir"/*.conf 2>/dev/null | sed 's/^/  /' || true
+                        print_detail "These configs are waiting to be validated before being applied to nginx"
+                    else
+                        print_detail "No configs in staging directory"
+                    fi
+                else
+                    print_detail "Staging directory does not exist"
+                fi
+                
+                # Check for rejected configs
+                if [ -d "$rejected_dir" ]; then
+                    local rejected_configs=$(ls -A "$rejected_dir"/*.conf* 2>/dev/null | head -1)
+                    if [ -n "$rejected_configs" ]; then
+                        print_warning "Found rejected configs (invalid configs that were not applied):"
+                        ls -latr "$rejected_dir"/*.conf* 2>/dev/null | sed 's/^/  /' || true
+                        print_detail "These configs failed validation and were rejected - nginx continues with existing valid configs"
+                    else
+                        print_detail "No rejected configs"
+                    fi
+                else
+                    print_detail "Rejected directory does not exist"
+                fi
+                
+                # Show validated configs in blue-green directory
+                if [ -d "$blue_green_dir" ]; then
+                    local blue_green_configs=$(ls -A "$blue_green_dir"/*.conf 2>/dev/null | head -1)
+                    if [ -n "$blue_green_configs" ]; then
+                        print_detail "Validated configs in blue-green directory (active):"
+                        ls -latr "$blue_green_dir"/*.conf 2>/dev/null | sed 's/^/  /' || true
+                    else
+                        print_detail "No validated configs in blue-green directory"
+                    fi
+                else
+                    print_detail "Blue-green directory does not exist"
+                fi
                 
                 # Check if nginx process is actually running inside container
                 print_status "Verifying nginx process is running..."
@@ -191,27 +281,11 @@ start_nginx_microservice() {
                 else
                     # Nginx process is not running - this is a real problem
                     print_error "Nginx process is NOT running - nginx failed to start"
-                    local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
                     print_detail "Container status: $container_status_full"
                     print_detail "Container logs (last 30 lines):"
                     docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
                     print_error "Nginx must be running - zero tolerance policy"
                     run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "Nginx process is not running"
-                fi
-                
-                # Informational: Test nginx configuration (but don't fail if it has errors)
-                # Config errors like "host not found in upstream" are expected when containers aren't running
-                # New configs are validated before being applied, so existing configs with errors are acceptable
-                print_status "Testing nginx configuration (informational only)..."
-                if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
-                    print_success "Nginx configuration test ${GREEN_CHECK} passed"
-                else
-                    print_warning "Nginx configuration test ${RED_X} failed (this is acceptable if containers aren't running)"
-                    print_detail "Nginx config test output:"
-                    docker compose exec -T nginx nginx -t 2>&1 | sed 's/^/  /' | head -5 || true
-                    print_detail "Note: Config errors like 'host not found in upstream' are expected when containers aren't running."
-                    print_detail "Nginx will return 502s until containers are available - this is expected behavior."
-                    print_detail "New service configs are validated before being applied - invalid configs are automatically rejected."
                 fi
                 
                 return 0
