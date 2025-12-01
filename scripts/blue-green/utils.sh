@@ -621,6 +621,13 @@ validate_config_in_isolation() {
             print_error "This config would break nginx and has been rejected"
             print_error "Upstream blocks must use 'resolve' directive for runtime DNS resolution"
             test_result=1
+        elif echo "$error_output" | grep -qE "duplicate upstream"; then
+            print_error "Config validation FAILED: Duplicate upstream block detected:"
+            echo "$error_output" | grep -E "duplicate upstream" | sed 's/^/  /'
+            print_error "This config would break nginx and has been rejected"
+            print_error "Upstream blocks must be unique across all config files"
+            print_error "Check if this upstream is already defined in another config file for the same service"
+            test_result=1
         else
             print_error "Config validation failed for ${domain}.${color}.conf:"
             echo "$error_output" | sed 's/^/  /'
@@ -730,8 +737,9 @@ generate_blue_green_configs() {
     # Generate upstream blocks for blue and green configs
     # Upstream blocks are required by nginx even if we use variables in proxy_pass
     # This allows nginx to start even when containers are not running (will return 502 until containers start)
-    local blue_upstreams=$(generate_upstream_blocks "$service_name" "$domain" "blue")
-    local green_upstreams=$(generate_upstream_blocks "$service_name" "$domain" "green")
+    # Function signature: generate_upstream_blocks service_name active_color domain
+    local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue" "$domain")
+    local green_upstreams=$(generate_upstream_blocks "$service_name" "green" "$domain")
     
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
