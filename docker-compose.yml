@@ -12,7 +12,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
       - ./nginx/includes:/etc/nginx/includes:ro
       - ./certificates:/etc/nginx/certs:ro
-      - ./logs/nginx:/var/log/nginx:rw
+      - /srv/storagebox/statex/docker-volumes/nginx-microservice/logs/nginx:/var/log/nginx:rw
       - ./webroot:/var/www/html:rw
     networks:
       - nginx-network
@@ -31,7 +31,7 @@ services:
     volumes:
       - ./certificates:/etc/letsencrypt:rw
       - ./webroot:/var/www/html:rw
-      - ./logs/certbot:/var/log/certbot:rw
+      - /srv/storagebox/statex/docker-volumes/nginx-microservice/logs/certbot:/var/log/certbot:rw
       - ./certbot/scripts:/scripts:ro
     networks:
       - nginx-network
