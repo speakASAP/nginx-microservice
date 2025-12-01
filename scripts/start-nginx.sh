@@ -46,15 +46,38 @@ start_nginx_microservice() {
     local container_status=$(check_container_running "nginx-microservice")
     local status_code=$?
     
-    if [ $status_code -eq 0 ]; then
-        print_success "nginx-microservice is ${GREEN_CHECK} already running"
-        print_detail "Container status:"
-        docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-        return 0
-    elif [ $status_code -eq 2 ]; then
+    if [ $status_code -eq 2 ]; then
         # Container is restarting - zero tolerance, run diagnostic and exit
         print_error "nginx-microservice is in RESTARTING state - zero tolerance policy"
         run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
+    elif [ $status_code -eq 0 ]; then
+        # Container is running - check if it's healthy
+        print_success "nginx-microservice is ${GREEN_CHECK} already running"
+        print_detail "Container status:"
+        docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
+        
+        # Check for unhealthy status (zero tolerance)
+        local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+        if echo "$container_status_full" | grep -qiE "unhealthy"; then
+            print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+            print_detail "Container status: $container_status_full"
+            print_detail "Container logs (last 30 lines):"
+            docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+        fi
+        
+        # Always test nginx configuration (zero tolerance)
+        print_status "Testing nginx configuration..."
+        if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
+            print_success "Nginx configuration test ${GREEN_CHECK} passed"
+        else
+            print_error "Nginx configuration test ${RED_X} failed"
+            print_detail "Nginx config test output:"
+            docker compose exec -T nginx nginx -t 2>&1 | sed 's/^/  /' || true
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "Nginx configuration test failed"
+        fi
+        
+        return 0
     fi
     
     # Check and kill processes using ports 80 and 443 before starting
@@ -128,15 +151,26 @@ start_nginx_microservice() {
                 print_error "nginx-microservice is in RESTARTING state after $attempt attempts"
                 run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
             elif [ $status_code -eq 0 ]; then
-                # Container is running
+                # Container is running - check if it's healthy
                 print_success "nginx-microservice is ${GREEN_CHECK} running"
                 print_detail "Container status:"
                 docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
+                
+                # Check for unhealthy status (zero tolerance)
+                local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+                if echo "$container_status_full" | grep -qiE "unhealthy"; then
+                    print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+                    print_detail "Container status: $container_status_full"
+                    print_detail "Container logs (last 30 lines):"
+                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+                fi
+                
                 print_detail ""
                 print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
                 print_detail "This is expected behavior - nginx will connect when containers start."
                 
-                # Test nginx configuration
+                # Test nginx configuration (zero tolerance)
                 print_status "Testing nginx configuration..."
                 if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
                     print_success "Nginx configuration test ${GREEN_CHECK} passed"
