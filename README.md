@@ -215,6 +215,7 @@ The system includes a robust validation mechanism that ensures nginx always runs
 5. **Nginx Resilience**: Nginx continues running with existing valid configs even if new configs fail validation
 
 **Example**: If you add a new service with a config that has a syntax error or conflicts with existing configs:
+
 - The invalid config is rejected and moved to `rejected/` directory
 - Nginx continues running with all existing valid configs
 - RabbitMQ, database, and logging servers remain unaffected
@@ -549,7 +550,7 @@ All services have dependencies that must be respected when starting the system. 
 # Start all services in correct dependency order
 ./scripts/start-all-services.sh
 
-# Start only infrastructure (nginx + database)
+# Start only infrastructure (database - nginx always starts)
 ./scripts/start-all-services.sh --skip-microservices --skip-applications
 
 # Start only microservices (assumes infrastructure is running)
@@ -557,13 +558,37 @@ All services have dependencies that must be respected when starting the system. 
 
 # Start only applications (assumes infrastructure and microservices are running)
 ./scripts/start-all-services.sh --skip-infrastructure --skip-microservices
+
+# Start a single service
+./scripts/start-all-services.sh --service <service-name>
+```
+
+**Individual Scripts (for debugging and maintenance):**
+
+```bash
+# Start nginx only (always runs first - mandatory)
+./scripts/start-nginx.sh
+
+# Start infrastructure only (database-server)
+./scripts/start-infrastructure.sh
+
+# Start microservices only
+./scripts/start-microservices.sh
+./scripts/start-microservices.sh --service <service-name>
+
+# Start applications only
+./scripts/start-applications.sh
+./scripts/start-applications.sh --service <service-name>
 ```
 
 **Startup Order:**
 
-1. **Infrastructure**: nginx-microservice → database-server
-2. **Microservices**: logging-microservice → auth-microservice → payment-microservice → notifications-microservice
-3. **Applications**: crypto-ai-agent → statex → e-commerce
+1. **Nginx** (Phase 1 - always runs): nginx-network → nginx-microservice
+2. **Infrastructure** (Phase 2): database-server (postgres + redis)
+3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payment-microservice → notifications-microservice
+4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → e-commerce
+
+**Note**: Nginx is the primary service and must always start. There is no `--skip-nginx` flag. Nginx will be restarted/reloaded when new services are added, which serves as an additional test point.
 
 ### Services Quick Start
 
@@ -609,6 +634,14 @@ For detailed documentation, see:
 - `health-check.sh` - Check service health
 - `rollback.sh` - Rollback to previous deployment
 - `cleanup.sh` - Remove old deployment
+
+**Service Startup Scripts** (in `scripts/`):
+
+- `start-all-services.sh` - **MASTER SCRIPT**: Starts all services in dependency order (calls the 4 phase scripts)
+- `start-nginx.sh` - Phase 1: Starts nginx-network and nginx-microservice (always runs first - mandatory)
+- `start-infrastructure.sh` - Phase 2: Starts database-server (postgres + redis)
+- `start-microservices.sh` - Phase 3: Starts all microservices
+- `start-applications.sh` - Phase 4: Starts all applications
 
 **Nginx Management Scripts** (in `scripts/`):
 

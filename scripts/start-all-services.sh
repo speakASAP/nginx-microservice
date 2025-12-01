@@ -1,51 +1,15 @@
 #!/bin/bash
 # Central Service Startup Script
-# Starts all services in dependency order: Infrastructure -> Microservices -> Applications
+# Starts all services in dependency order: Nginx -> Infrastructure -> Microservices -> Applications
 # Usage: start-all-services.sh [--skip-infrastructure] [--skip-microservices] [--skip-applications] [--service <name>]
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REGISTRY_DIR="${NGINX_PROJECT_DIR}/service-registry"
-BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m' # No Color
-
-# Status symbols
-GREEN_CHECK='\033[0;32m✓\033[0m'
-RED_X='\033[0;31m✗\033[0m'
-
-# Function to get timestamp
-get_timestamp() {
-    date '+%Y-%m-%d %H:%M:%S'
-}
-
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} [$(get_timestamp)] $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} [$(get_timestamp)] $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} [$(get_timestamp)] $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} [$(get_timestamp)] $1"
-}
-
-print_detail() {
-    echo -e "${CYAN}[DETAIL]${NC} [$(get_timestamp)] $1"
-}
+# Source shared utilities
+source "${SCRIPT_DIR}/startup-utils.sh"
 
 # Parse arguments
 SKIP_INFRASTRUCTURE=false
@@ -79,608 +43,79 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Service categories and startup order
-# Infrastructure services (no dependencies)
-INFRASTRUCTURE_SERVICES=(
-    "nginx-microservice"         # Reverse proxy for all services
-    "database-server"            # postgres + redis, needed for all services
-)
-
-# Microservices (depend only on infrastructure)
-MICROSERVICES=(
-    "logging-microservice"       # No dependencies
-    "auth-microservice"          # Needs postgres
-    "payment-microservice"       # Needs postgres
-    "notifications-microservice" # Needs postgres + redis
-)
-
-# Applications (may depend on microservices)
-APPLICATIONS=(
-    "allegro"                    # Needs postgres + redis
-    "crypto-ai-agent"            # Needs postgres + redis
-    "statex"                     # Needs postgres + redis
-    "e-commerce"                 # Needs postgres + redis
-)
-
-# Function to check if service registry exists
-service_exists() {
-    local service_name="$1"
-    [ -f "${REGISTRY_DIR}/${service_name}.json" ]
-}
-
-# Function to check if container is running
-container_running() {
-    local container_name="$1"
-    docker ps --format "{{.Names}}" | grep -q "^${container_name}$"
-}
-
-# Function to check if network exists
-network_exists() {
-    local network_name="$1"
-    docker network ls --format "{{.Name}}" | grep -q "^${network_name}$"
-}
-
-# Function to start nginx-network
-start_nginx_network() {
-    print_status "Checking nginx-network..."
-    if network_exists "nginx-network"; then
-        print_success "Network nginx-network already exists"
-        print_detail "Network details:"
-        docker network inspect nginx-network --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
-        return 0
-    fi
-    
-    print_status "Creating nginx-network..."
-    print_detail "Executing: docker network create nginx-network"
-    if docker network create nginx-network 2>&1; then
-        print_success "Network nginx-network created successfully"
-        print_detail "Network details:"
-        docker network inspect nginx-network --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
-        return 0
-    else
-        print_error "Failed to create nginx-network"
-        return 1
-    fi
-}
-
-# Function to start nginx-microservice
-start_nginx_microservice() {
-    print_status "Starting nginx-microservice..."
-    
-    cd "$NGINX_PROJECT_DIR"
-    print_detail "Working directory: $(pwd)"
-    
-    # Check if nginx is already running and healthy
-    if container_running "nginx-microservice"; then
-        local nginx_status=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" | head -1 || echo "")
-        if echo "$nginx_status" | grep -qE "Restarting"; then
-            print_warning "nginx-microservice is restarting, will kill and restart it"
-        else
-            print_success "nginx-microservice is ${GREEN_CHECK} already running"
-            print_detail "Container status:"
-            docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-            return 0
-        fi
-    fi
-    
-    # Check and kill processes using ports 80 and 443 before starting
-    print_status "Checking for port conflicts on ports 80 and 443..."
-    if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
-        source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
-        if type kill_port_if_in_use >/dev/null 2>&1; then
-            kill_port_if_in_use "80" "nginx-microservice" "infrastructure"
-            kill_port_if_in_use "443" "nginx-microservice" "infrastructure"
-        fi
-        # Also kill any existing nginx containers that might be restarting
-        if type kill_container_if_exists >/dev/null 2>&1; then
-            kill_container_if_exists "nginx-microservice" "nginx-microservice" "infrastructure"
-            kill_container_if_exists "nginx-certbot" "nginx-microservice" "infrastructure"
-        fi
-    fi
-    
-    # Fallback: manual port checking if utils.sh not available
-    if ! type kill_port_if_in_use >/dev/null 2>&1; then
-        # Check for containers using ports 80 or 443
-        local port80_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":80->|:80/|0\.0\.0\.0:80:" | awk '{print $1}' | head -1 || echo "")
-        local port443_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | grep -E ":443->|:443/|0\.0\.0\.0:443:" | awk '{print $1}' | head -1 || echo "")
-        
-        if [ -n "$port80_container" ] && [ "$port80_container" != "nginx-microservice" ]; then
-            print_warning "Port 80 is in use by container ${port80_container}, stopping it"
-            docker stop "${port80_container}" 2>/dev/null || true
-            docker kill "${port80_container}" 2>/dev/null || true
-            docker rm -f "${port80_container}" 2>/dev/null || true
-        fi
-        
-        if [ -n "$port443_container" ] && [ "$port443_container" != "nginx-microservice" ]; then
-            print_warning "Port 443 is in use by container ${port443_container}, stopping it"
-            docker stop "${port443_container}" 2>/dev/null || true
-            docker kill "${port443_container}" 2>/dev/null || true
-            docker rm -f "${port443_container}" 2>/dev/null || true
-        fi
-        
-        # Also kill any existing nginx containers
-        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$|^nginx-certbot$"; then
-            print_warning "Killing existing nginx containers"
-            docker kill nginx-microservice nginx-certbot 2>/dev/null || true
-            docker rm -f nginx-microservice nginx-certbot 2>/dev/null || true
-        fi
-    fi
-    
-    # Start nginx
-    print_detail "Executing: docker compose up -d"
-    print_detail "Docker compose output:"
-    if docker compose up -d 2>&1; then
-        print_success "nginx-microservice containers started"
-        
-        # Show container status
-        print_detail "Container status after startup:"
-        docker compose ps 2>&1 || true
-        
-        # Wait for nginx container to be running
-        # Nginx is independent of container state - it can start even if upstreams are unavailable
-        # Nginx will return 502 errors until containers are available, which is acceptable
-        print_status "Waiting for nginx container to be running (checking every 2 seconds)..."
-        local max_attempts=15
-        local attempt=0
-        while [ $attempt -lt $max_attempts ]; do
-            # Check if container is running (not restarting)
-            local container_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
-            
-            if [ -n "$container_status" ] && echo "$container_status" | grep -qE "Restarting"; then
-                attempt=$((attempt + 1))
-                if [ $attempt -lt $max_attempts ]; then
-                    print_detail "Container is restarting, waiting... (attempt $attempt/$max_attempts)"
-                    sleep 2
-                    continue
-                else
-                    # Container still restarting after max attempts - diagnose the issue
-                    print_error "nginx-microservice is in restart loop after $max_attempts attempts"
-                    print_detail "Container logs (last 30 lines):"
-                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-                    print_detail ""
-                    print_warning "Run diagnostic script to identify root cause:"
-                    print_detail "  ./scripts/diagnose-nginx-restart.sh"
-                    return 1
-                fi
-            fi
-            
-            # Check if container is running (not just exists)
-            if container_running "nginx-microservice"; then
-                print_success "nginx-microservice is ${GREEN_CHECK} running"
-                print_detail "Container status:"
-                docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-                print_detail ""
-                print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
-                print_detail "This is expected behavior - nginx will connect when containers start."
-                return 0
-            else
-                attempt=$((attempt + 1))
-                if [ $attempt -lt $max_attempts ]; then
-                    print_detail "Container not running yet, waiting... (attempt $attempt/$max_attempts)"
-                    sleep 2
-                fi
-            fi
-        done
-        
-        print_warning "nginx-microservice container did not start after $max_attempts attempts"
-        print_detail "Container logs (last 20 lines):"
-        docker compose logs --tail=20 nginx 2>&1 || true
-        print_detail ""
-        print_warning "Run diagnostic script for detailed analysis:"
-        print_detail "  ./scripts/diagnose-nginx-restart.sh"
-        return 1
-    else
-        print_error "Failed to start nginx-microservice"
-        print_detail "Docker compose logs:"
-        docker compose logs --tail=30 2>&1 || true
-        return 1
-    fi
-}
-
-# Function to start database-server
-start_database_server() {
-    print_status "Starting database-server..."
-    
-    # Check if database-server is already running and healthy
-    local postgres_running=false
-    local redis_running=false
-    
-    if container_running "db-server-postgres"; then
-        local pg_status=$(docker ps --filter "name=db-server-postgres" --format "{{.Status}}" | head -1 || echo "")
-        if echo "$pg_status" | grep -qE "Restarting"; then
-            print_warning "db-server-postgres is restarting, will kill and restart it"
-        else
-            postgres_running=true
-        fi
-    fi
-    
-    if container_running "db-server-redis"; then
-        local redis_status=$(docker ps --filter "name=db-server-redis" --format "{{.Status}}" | head -1 || echo "")
-        if echo "$redis_status" | grep -qE "Restarting"; then
-            print_warning "db-server-redis is restarting, will kill and restart it"
-        else
-            redis_running=true
-        fi
-    fi
-    
-    if [ "$postgres_running" = true ] && [ "$redis_running" = true ]; then
-        print_success "database-server is ${GREEN_CHECK} already running"
-        print_detail "Container status:"
-        docker ps --filter "name=db-server" --format "  - {{.Names}}: {{.Status}}" 2>&1 || true
-        return 0
-    fi
-    
-    # Check if database-server directory exists
-    if [ ! -d "/home/statex/database-server" ]; then
-        print_error "database-server directory not found: /home/statex/database-server"
-        return 1
-    fi
-    
-    cd /home/statex/database-server
-    print_detail "Working directory: $(pwd)"
-    
-    # Check and kill processes using database ports before starting
-    print_status "Checking for port conflicts on database ports..."
-    
-    # Get ports from docker-compose file or use defaults
-    local postgres_port="${DB_SERVER_PORT:-5432}"
-    local redis_port="${REDIS_SERVER_PORT:-6379}"
-    
-    if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
-        source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
-        if type kill_port_if_in_use >/dev/null 2>&1; then
-            kill_port_if_in_use "$postgres_port" "database-server" "infrastructure"
-            kill_port_if_in_use "$redis_port" "database-server" "infrastructure"
-        fi
-    fi
-    
-    # Also kill any existing database containers that might be restarting
-    if type kill_container_if_exists >/dev/null 2>&1; then
-        kill_container_if_exists "db-server-postgres" "database-server" "infrastructure"
-        kill_container_if_exists "db-server-redis" "database-server" "infrastructure"
-    fi
-    
-    # Fallback: manual port checking if utils.sh not available
-    if ! type kill_port_if_in_use >/dev/null 2>&1; then
-        # Check for containers using postgres port
-        local pg_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
-            grep -E ":${postgres_port}->|:${postgres_port}/|127\.0\.0\.1:${postgres_port}:" | \
-            awk '{print $1}' | grep -v "db-server-postgres" | head -1 || echo "")
-        
-        if [ -n "$pg_container" ]; then
-            print_warning "Port ${postgres_port} is in use by container ${pg_container}, stopping it"
-            docker stop "${pg_container}" 2>/dev/null || true
-            docker kill "${pg_container}" 2>/dev/null || true
-            docker rm -f "${pg_container}" 2>/dev/null || true
-        fi
-        
-        # Check for containers using redis port
-        local redis_container=$(docker ps --format "{{.Names}}\t{{.Ports}}" 2>/dev/null | \
-            grep -E ":${redis_port}->|:${redis_port}/|127\.0\.0\.1:${redis_port}:" | \
-            awk '{print $1}' | grep -v "db-server-redis" | head -1 || echo "")
-        
-        if [ -n "$redis_container" ]; then
-            print_warning "Port ${redis_port} is in use by container ${redis_container}, stopping it"
-            docker stop "${redis_container}" 2>/dev/null || true
-            docker kill "${redis_container}" 2>/dev/null || true
-            docker rm -f "${redis_container}" 2>/dev/null || true
-        fi
-        
-        # Also kill any existing database containers
-        if docker ps -a --format "{{.Names}}" 2>/dev/null | grep -qE "^db-server-postgres$|^db-server-redis$"; then
-            print_warning "Killing existing database containers"
-            docker kill db-server-postgres db-server-redis 2>/dev/null || true
-            docker rm -f db-server-postgres db-server-redis 2>/dev/null || true
-        fi
-    fi
-    
-    # Start database-server
-    print_detail "Executing: docker compose up -d"
-    print_detail "Docker compose output:"
-    if docker compose up -d 2>&1; then
-        print_success "database-server containers started"
-        
-        # Show container status
-        print_detail "Container status after startup:"
-        docker compose ps 2>&1 || true
-        
-        # Wait for postgres to be healthy
-        print_status "Waiting for PostgreSQL to be healthy (checking every 2 seconds)..."
-        local max_attempts=30
-        local attempt=0
-        while [ $attempt -lt $max_attempts ]; do
-            attempt=$((attempt + 1))
-            print_detail "PostgreSQL health check attempt $attempt/$max_attempts..."
-            local pg_output
-            pg_output=$(docker exec db-server-postgres pg_isready -U dbadmin 2>&1)
-            local pg_exit=$?
-            if [ $pg_exit -eq 0 ]; then
-                print_success "PostgreSQL is ${GREEN_CHECK} healthy (pg_isready passed)"
-                print_detail "PostgreSQL connection info:"
-                echo "$pg_output" | sed 's/^/  /'
-                break
-            else
-                print_detail "PostgreSQL ${RED_X} not ready yet:"
-                echo "$pg_output" | sed 's/^/  /' | head -3
-                print_detail "Waiting 2 seconds before retry..."
-            fi
-            sleep 2
-        done
-        
-        if [ $attempt -eq $max_attempts ]; then
-            print_warning "PostgreSQL health check ${RED_X} timeout after $max_attempts attempts, but continuing..."
-            print_detail "PostgreSQL container logs (last 20 lines):"
-            docker compose logs --tail=20 postgres 2>&1 || true
-        fi
-        
-        # Wait for redis to be healthy
-        print_status "Waiting for Redis to be healthy (checking every 1 second)..."
-        attempt=0
-        while [ $attempt -lt 15 ]; do
-            attempt=$((attempt + 1))
-            print_detail "Redis health check attempt $attempt/15..."
-            local redis_output
-            redis_output=$(docker exec db-server-redis redis-cli ping 2>&1)
-            local redis_exit=$?
-            if echo "$redis_output" | grep -q "PONG"; then
-                print_success "Redis is ${GREEN_CHECK} healthy (PING/PONG successful)"
-                print_detail "Redis connection info:"
-                echo "$redis_output" | sed 's/^/  /'
-                return 0
-            else
-                print_detail "Redis ${RED_X} not ready yet:"
-                echo "$redis_output" | sed 's/^/  /' | head -3
-                print_detail "Waiting 1 second before retry..."
-            fi
-            sleep 1
-        done
-        
-        if [ $attempt -eq 15 ]; then
-            print_warning "Redis health check ${RED_X} timeout after 15 attempts, but continuing..."
-            print_detail "Redis container logs (last 20 lines):"
-            docker compose logs --tail=20 redis 2>&1 || true
-        fi
-        
-        return 0
-    else
-        print_error "Failed to start database-server"
-        print_detail "Docker compose logs:"
-        docker compose logs --tail=30 2>&1 || true
-        return 1
-    fi
-}
-
-# Function to start a service using deploy-smart.sh
-start_service() {
-    local service_name="$1"
-    
-    print_status "========================================"
-    print_status "Starting service: $service_name"
-    print_status "========================================"
-    
-    if ! service_exists "$service_name"; then
-        print_warning "Service registry not found: ${service_name}.json, skipping..."
-        return 1
-    fi
-    
-    print_detail "Service registry file: ${REGISTRY_DIR}/${service_name}.json"
-    
-    # Use deploy-smart.sh to start the service
-    if [ ! -f "${BLUE_GREEN_DIR}/deploy-smart.sh" ]; then
-        print_error "deploy-smart.sh not found at: ${BLUE_GREEN_DIR}/deploy-smart.sh"
-        return 1
-    fi
-    
-    # Check if service containers are already running
-    local registry=$(cat "${REGISTRY_DIR}/${service_name}.json" 2>/dev/null)
-    if [ -n "$registry" ]; then
-        local service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null)
-        local all_running=true
-        
-        while IFS= read -r service_key; do
-            local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
-            if [ -n "$container_base" ] && [ "$container_base" != "null" ]; then
-                # Check for blue, green, or base container name
-                if ! docker ps --format "{{.Names}}" | grep -qE "^${container_base}(-blue|-green)?$"; then
-                    all_running=false
-                    break
-                fi
-            fi
-        done <<< "$service_keys"
-        
-        if [ "$all_running" = "true" ] && [ -n "$service_keys" ]; then
-            print_success "Service $service_name containers are already running, skipping deployment"
-            return 0
-        fi
-    fi
-    
-    print_detail "Executing: ${BLUE_GREEN_DIR}/deploy-smart.sh $service_name"
-    print_detail "Deployment output:"
-    print_detail "----------------------------------------"
-    
-    # Capture output and exit code
-    local deploy_output
-    local deploy_exit_code
-    
-    if deploy_output=$("${BLUE_GREEN_DIR}/deploy-smart.sh" "$service_name" 2>&1); then
-        deploy_exit_code=0
-    else
-        deploy_exit_code=$?
-    fi
-    
-    # Display the output
-    echo "$deploy_output"
-    
-    print_detail "----------------------------------------"
-    
-    # Get container base name from registry (needed for both success and failure cases)
-    local container_base=""
-    local registry_file="${REGISTRY_DIR}/${service_name}.json"
-    if [ -f "$registry_file" ]; then
-        container_base=$(jq -r '.services | to_entries[0].value.container_name_base // empty' "$registry_file" 2>/dev/null || echo "")
-    fi
-    
-    if [ $deploy_exit_code -eq 0 ]; then
-        print_success "Service $service_name deployment completed successfully"
-        
-        # Validate nginx config for this service
-        print_detail "Validating nginx configuration for $service_name..."
-        BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
-        if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
-            source "${BLUE_GREEN_DIR}/utils.sh" 2>/dev/null || true
-            if type test_service_nginx_config >/dev/null 2>&1; then
-                if test_service_nginx_config "$service_name"; then
-                    print_success "Nginx configuration validated for $service_name"
-                else
-                    print_warning "Nginx configuration validation failed for $service_name (service deployed but config may need attention)"
-                fi
-            fi
-        fi
-        
-        # Show container status for this service
-        print_detail "Checking container status for $service_name..."
-        if [ -n "$container_base" ]; then
-            print_detail "Looking for containers matching: ${container_base}-*"
-            docker ps --filter "name=${container_base}" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-        fi
-        
-        # Show recent logs
-        print_detail "Recent container logs (last 15 lines):"
-        if [ -n "$container_base" ]; then
-            local active_container=$(docker ps --filter "name=${container_base}" --format "{{.Names}}" | grep -E "(blue|green)" | head -1)
-            if [ -n "$active_container" ]; then
-                docker logs --tail=15 "$active_container" 2>&1 | sed 's/^/  /' || true
-            fi
-        fi
-        
-        return 0
-    else
-        print_error "Failed to start service: $service_name (exit code: $deploy_exit_code)"
-        print_detail "Error details from deployment:"
-        echo "$deploy_output" | grep -i "error\|failed\|fatal" | head -20 | sed 's/^/  /' || true
-        
-        # Show container status even on failure
-        print_detail "Container status after failed deployment:"
-        if [ -n "$container_base" ]; then
-            docker ps -a --filter "name=${container_base}" --format "  - {{.Names}}: {{.Status}}" 2>&1 || true
-        fi
-        
-        return 1
-    fi
-}
-
 # Main execution
 print_status "=========================================="
 print_status "Starting All Services in Dependency Order"
 print_status "=========================================="
 
-# Phase 1: Infrastructure
+# Phase 1: Nginx (always runs - mandatory)
+print_status ""
+print_status "Phase 1: Starting Nginx"
+print_status "----------------------------------------"
+
+if ! "${SCRIPT_DIR}/start-nginx.sh"; then
+    print_error "Failed to start nginx phase"
+    exit 1
+fi
+
+print_success "Nginx phase completed"
+
+# Phase 2: Infrastructure
 if [ "$SKIP_INFRASTRUCTURE" = false ]; then
     print_status ""
-    print_status "Phase 1: Starting Infrastructure Services"
+    print_status "Phase 2: Starting Infrastructure Services"
     print_status "----------------------------------------"
     
-    # Start nginx-network
-    if ! start_nginx_network; then
-        print_error "Failed to start nginx-network"
+    if ! "${SCRIPT_DIR}/start-infrastructure.sh"; then
+        print_error "Failed to start infrastructure phase"
         exit 1
     fi
     
-    # Start nginx-microservice
-    if ! start_nginx_microservice; then
-        print_error "Failed to start nginx-microservice"
-        exit 1
-    fi
-    
-    # Start database-server
-    if ! start_database_server; then
-        print_error "Failed to start database-server"
-        exit 1
-    fi
-    
-    print_success "Infrastructure services started"
+    print_success "Infrastructure phase completed"
 else
     print_status "Skipping infrastructure services"
 fi
 
-# Phase 2: Microservices
+# Phase 3: Microservices
 if [ "$SKIP_MICROSERVICES" = false ]; then
     print_status ""
-    print_status "Phase 2: Starting Microservices"
+    print_status "Phase 3: Starting Microservices"
     print_status "--------------------------------"
     
-    service_count=0
-    success_count=0
-    fail_count=0
-    
-    for service in "${MICROSERVICES[@]}"; do
-        if [ -n "$SINGLE_SERVICE" ] && [ "$SINGLE_SERVICE" != "$service" ]; then
-            continue
-        fi
-        
-        service_count=$((service_count + 1))
-        print_status ""
-        print_status "Microservice $service_count/${#MICROSERVICES[@]}: $service"
-        
-        if start_service "$service"; then
-            success_count=$((success_count + 1))
-            print_success "Microservice $service started successfully"
-        else
-            fail_count=$((fail_count + 1))
-            print_error "Microservice $service ${RED_X} failed to start"
-            print_error "Stopping startup process due to error"
+    if [ -n "$SINGLE_SERVICE" ]; then
+        if ! "${SCRIPT_DIR}/start-microservices.sh" --service "$SINGLE_SERVICE"; then
+            print_error "Failed to start microservice: $SINGLE_SERVICE"
             exit 1
         fi
-        
-        # Small delay between services
-        print_detail "Waiting 2 seconds before starting next service..."
-        sleep 2
-    done
-    
-    print_status ""
-    print_status "Microservices summary: $success_count succeeded, $fail_count failed out of $service_count total"
+    else
+        if ! "${SCRIPT_DIR}/start-microservices.sh"; then
+            print_error "Failed to start microservices phase"
+            exit 1
+        fi
+    fi
     
     print_success "Microservices phase completed"
 else
     print_status "Skipping microservices"
 fi
 
-# Phase 3: Applications
+# Phase 4: Applications
 if [ "$SKIP_APPLICATIONS" = false ]; then
     print_status ""
-    print_status "Phase 3: Starting Applications"
+    print_status "Phase 4: Starting Applications"
     print_status "------------------------------"
     
-    service_count=0
-    success_count=0
-    fail_count=0
-    
-    for service in "${APPLICATIONS[@]}"; do
-        if [ -n "$SINGLE_SERVICE" ] && [ "$SINGLE_SERVICE" != "$service" ]; then
-            continue
-        fi
-        
-        service_count=$((service_count + 1))
-        print_status ""
-        print_status "Application $service_count/${#APPLICATIONS[@]}: $service"
-        
-        if start_service "$service"; then
-            success_count=$((success_count + 1))
-            print_success "Application $service started successfully"
-        else
-            fail_count=$((fail_count + 1))
-            print_error "Application $service ${RED_X} failed to start"
-            print_error "Stopping startup process due to error"
+    if [ -n "$SINGLE_SERVICE" ]; then
+        if ! "${SCRIPT_DIR}/start-applications.sh" --service "$SINGLE_SERVICE"; then
+            print_error "Failed to start application: $SINGLE_SERVICE"
             exit 1
         fi
-        
-        # Small delay between services
-        print_detail "Waiting 2 seconds before starting next service..."
-        sleep 2
-    done
-    
-    print_status ""
-    print_status "Applications summary: $success_count succeeded, $fail_count failed out of $service_count total"
+    else
+        if ! "${SCRIPT_DIR}/start-applications.sh"; then
+            print_error "Failed to start applications phase"
+            exit 1
+        fi
+    fi
     
     print_success "Applications phase completed"
 else
@@ -720,6 +155,9 @@ else
     print_success "All running containers appear ${GREEN_CHECK} healthy"
 fi
 
-$SCRIPT_DIR/status-all-services.sh
+# Show service status
+if [ -f "${SCRIPT_DIR}/status-all-services.sh" ]; then
+    "${SCRIPT_DIR}/status-all-services.sh"
+fi
 
 exit 0
