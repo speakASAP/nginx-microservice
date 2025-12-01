@@ -51,20 +51,10 @@ start_nginx_microservice() {
         print_error "nginx-microservice is in RESTARTING state - zero tolerance policy"
         run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
     elif [ $status_code -eq 0 ]; then
-        # Container is running - check if it's healthy (zero tolerance for unhealthy)
+        # Container is running - check nginx config directories first (for diagnostics)
         print_success "nginx-microservice is ${GREEN_CHECK} already running"
         print_detail "Container status:"
         docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-        
-        # Zero tolerance for unhealthy status - must run diagnostic and exit
-        local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
-        if echo "$container_status_full" | grep -qiE "unhealthy"; then
-            print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
-            print_detail "Container status: $container_status_full"
-            print_detail "Container logs (last 30 lines):"
-            docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
-        fi
         
         # Check nginx config directories according to validation system
         local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
@@ -113,6 +103,16 @@ start_nginx_microservice() {
             fi
         else
             print_detail "Blue-green directory does not exist"
+        fi
+        
+        # Zero tolerance for unhealthy status - must run diagnostic and exit
+        local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+        if echo "$container_status_full" | grep -qiE "unhealthy"; then
+            print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+            print_detail "Container status: $container_status_full"
+            print_detail "Container logs (last 30 lines):"
+            docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
         fi
         
         # Check if nginx process is actually running inside container
@@ -206,20 +206,10 @@ start_nginx_microservice() {
                 print_error "nginx-microservice is in RESTARTING state after $attempt attempts"
                 run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
             elif [ $status_code -eq 0 ]; then
-                # Container is running - check if it's healthy (zero tolerance for unhealthy)
+                # Container is running - check nginx config directories first (for diagnostics)
                 print_success "nginx-microservice is ${GREEN_CHECK} running"
                 print_detail "Container status:"
                 docker ps --filter "name=nginx-microservice" --format "  - {{.Names}}: {{.Status}} ({{.Ports}})" 2>&1 || true
-                
-                # Zero tolerance for unhealthy status - must run diagnostic and exit
-                local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
-                if echo "$container_status_full" | grep -qiE "unhealthy"; then
-                    print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
-                    print_detail "Container status: $container_status_full"
-                    print_detail "Container logs (last 30 lines):"
-                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
-                fi
                 
                 # Check nginx config directories according to validation system
                 local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
@@ -268,6 +258,16 @@ start_nginx_microservice() {
                     fi
                 else
                     print_detail "Blue-green directory does not exist"
+                fi
+                
+                # Zero tolerance for unhealthy status - must run diagnostic and exit
+                local container_status_full=$(docker ps --filter "name=nginx-microservice" --format "{{.Status}}" 2>/dev/null || echo "")
+                if echo "$container_status_full" | grep -qiE "unhealthy"; then
+                    print_error "nginx-microservice is in UNHEALTHY state - zero tolerance policy"
+                    print_detail "Container status: $container_status_full"
+                    print_detail "Container logs (last 30 lines):"
+                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
                 fi
                 
                 # Check if nginx process is actually running inside container
