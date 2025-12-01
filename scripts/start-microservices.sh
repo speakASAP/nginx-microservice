@@ -306,7 +306,7 @@ for service in "${MICROSERVICES[@]}"; do
         success_count=$((success_count + 1))
         print_success "Microservice $service ${GREEN_CHECK} started and verified successfully"
     else
-        local exit_code=$?
+        exit_code=$?
         FAILED_SERVICES+=("$service (exit code: $exit_code)")
         fail_count=$((fail_count + 1))
         print_error "Microservice $service ${RED_X} failed to start or verify"
@@ -357,4 +357,3 @@ else
     print_error "Script will exit with error - all services must pass for success"
     exit 1
 fi
-
