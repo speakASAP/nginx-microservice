@@ -65,12 +65,6 @@
   "domains": {
     "statex.cz": {
       "services": ["frontend", "content-service", "submission-service", "user-portal", "ai-orchestrator", "api-gateway"]
-    },
-    "ai.statex.cz": {
-      "services": ["ai-orchestrator"]
-    },
-    "api.statex.cz": {
-      "services": ["api-gateway"]
     }
   }
 }
