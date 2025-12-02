@@ -537,27 +537,45 @@ validate_config_in_isolation() {
     # Ensure nginx container is running (or try to start it)
     # If nginx container is not accessible, we can still validate if pre-validation passed
     local nginx_accessible=false
-    if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$"; then
-        # Check if container is actually accessible (not restarting)
-        if docker compose -f "$nginx_compose_file" exec -T nginx echo >/dev/null 2>&1; then
-            nginx_accessible=true
+    local max_wait=30
+    local wait_interval=1
+    local elapsed=0
+    
+    # Wait for nginx container to be stable (not restarting)
+    while [ $elapsed -lt $max_wait ]; do
+        if docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -qE "^nginx-microservice\s+Up"; then
+            # Check if container is actually accessible (not restarting)
+            if docker compose -f "$nginx_compose_file" exec -T nginx echo >/dev/null 2>&1; then
+                nginx_accessible=true
+                break
+            fi
         fi
-    fi
+        sleep $wait_interval
+        elapsed=$((elapsed + wait_interval))
+    done
     
     if [ "$nginx_accessible" = "false" ]; then
         print_status "Nginx container not accessible, attempting to start it..."
         cd "$NGINX_PROJECT_DIR"
         if docker compose -f "$nginx_compose_file" up -d nginx >/dev/null 2>&1; then
-            # Wait for nginx to be ready
-            sleep 3
-            if docker compose -f "$nginx_compose_file" exec -T nginx echo >/dev/null 2>&1; then
-                nginx_accessible=true
-            fi
+            # Wait for nginx to be ready and stable
+            elapsed=0
+            while [ $elapsed -lt $max_wait ]; do
+                if docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep -qE "^nginx-microservice\s+Up"; then
+                    if docker compose -f "$nginx_compose_file" exec -T nginx echo >/dev/null 2>&1; then
+                        nginx_accessible=true
+                        break
+                    fi
+                fi
+                sleep $wait_interval
+                elapsed=$((elapsed + wait_interval))
+            done
         fi
     fi
     
     # If nginx is still not accessible but pre-validation passed, we can still proceed
     # Pre-validation (empty upstream check) is the critical check - if that passes, config is likely safe
+    # Configs with resolve directive will work even if containers don't exist yet
     if [ "$nginx_accessible" = "false" ]; then
         print_warning "Nginx container not accessible for full validation"
         print_warning "Pre-validation passed (no empty upstream blocks) - config appears safe"
