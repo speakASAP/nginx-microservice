@@ -79,12 +79,13 @@ cd /path/to/nginx-microservice
 #### **B. Regenerate Configs**
 
 ```bash
-# Regenerate blue and green configs from template
+# Regenerate blue and green configs from template (validated via staging → blue-green pipeline)
 cd /path/to/nginx-microservice
 ./scripts/blue-green/migrate-to-symlinks.sh crypto-ai-agent
 
 # This will regenerate configs based on current service registry
-# and ensure symlink points to correct active color
+# using the staging + isolated validation + blue/green + symlink pipeline
+# and ensure the symlink points to the correct active color without breaking nginx
 ```
 
 #### **C. Verify Containers Exist**
@@ -252,7 +253,7 @@ docker exec crypto-ai-backend-green env | grep DATABASE
 
 ```bash
 # Fix the issue, then retry deployment
-./scripts/blue-green/deploy.sh crypto-ai-agent
+./scripts/blue-green/deploy-smart.sh crypto-ai-agent
 ```
 
 ---
@@ -354,8 +355,11 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
    # Check certificates
    ls -la certificates/crypto-ai-agent.statex.cz/
    
-   # Regenerate if needed
+   # Regenerate nginx config for the domain using validated pipeline
    ./scripts/add-domain.sh crypto-ai-agent.statex.cz
+   # This writes a config into nginx/conf.d/staging/, validates it in isolation with existing configs,
+   # promotes it to nginx/conf.d/blue-green/ on success, and sends invalid configs to nginx/conf.d/rejected/
+   # without breaking a running nginx instance.
    ```
 
 2. **Firewall Blocking Port 443**
@@ -472,7 +476,7 @@ docker compose -f /path/to/crypto-ai-agent/docker-compose.green.yml \
 
 ```bash
 # Check script is still running
-ps aux | grep deploy.sh
+ps aux | grep deploy-smart.sh
 
 # Check container states
 docker ps | grep crypto-ai
@@ -502,13 +506,13 @@ docker logs crypto-ai-backend-green | tail -50
 
 ```bash
 # Kill stuck deployment
-pkill -f deploy.sh
+pkill -f deploy-smart.sh
 
 # Clean up intermediate state
 docker compose -f docker-compose.green.yml -p crypto_ai_agent_green down
 
 # Retry deployment
-./scripts/blue-green/deploy.sh crypto-ai-agent
+./scripts/blue-green/deploy-smart.sh crypto-ai-agent
 ```
 
 ---
@@ -587,7 +591,7 @@ curl http://crypto-ai-frontend-green:3100/
 1. **Always Test Before Production**
 
    ```bash
-   ./scripts/blue-green/prepare-green.sh crypto-ai-agent
+   ./scripts/blue-green/prepare-green-smart.sh crypto-ai-agent
    ```
 
 2. **Monitor During Deployment**

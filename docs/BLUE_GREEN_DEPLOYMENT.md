@@ -32,7 +32,7 @@ The blue/green deployment system consists of:
 
 ```bash
 cd /path/to/nginx-microservice
-./scripts/blue-green/deploy.sh crypto-ai-agent
+./scripts/blue-green/deploy-smart.sh crypto-ai-agent
 ```
 
 This will:
@@ -150,9 +150,9 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 
 ## Available Scripts
 
-### `deploy.sh` - Full Deployment
+### `deploy-smart.sh` - Full Deployment (recommended)
 
-**Usage**: `./scripts/blue-green/deploy.sh <service_name>`
+**Usage**: `./scripts/blue-green/deploy-smart.sh <service_name>`
 
 **What it does**:
 
@@ -165,12 +165,12 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 **Example**:
 
 ```bash
-./scripts/blue-green/deploy.sh crypto-ai-agent
+./scripts/blue-green/deploy-smart.sh crypto-ai-agent
 ```
 
-### `prepare-green.sh` - Prepare New Deployment
+### `prepare-green-smart.sh` - Prepare New Deployment
 
-**Usage**: `./scripts/blue-green/prepare-green.sh <service_name>`
+**Usage**: `./scripts/blue-green/prepare-green-smart.sh <service_name>`
 
 **What it does**:
 
@@ -384,21 +384,21 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
 ### Standard Deployment Flow
 
 ```text
-1. deploy.sh called
+1. deploy-smart.sh called
    ↓
 0. ensure-infrastructure.sh (NEW)
    - Check shared infrastructure (postgres, redis)
    - Start if not running
    - Wait for health checks
    ↓
-2. prepare-green.sh
+2. prepare-green-smart.sh
    - Ensure infrastructure is running
    - Build green containers (backend, frontend only)
    - Start green containers
    - Health checks
    ↓
 3. switch-traffic.sh
-   - Ensure blue/green configs exist
+   - Ensure blue/green configs exist (generated to staging/, validated, then applied to blue-green/)
    - Update symlink to point to new color
    - Reload nginx
    ↓
@@ -424,26 +424,35 @@ docker compose -f docker-compose.infrastructure.yml -p crypto_ai_agent_infrastru
 
 ## Nginx Configuration
 
-The nginx configuration uses a **symlink-based architecture** for zero-downtime switching:
+The nginx configuration uses a **symlink-based architecture** for zero-downtime switching and a **validated config pipeline** to ensure nginx always runs safely:
 
 ### File Structure
 
-Each service has three nginx config files:
+Each service has nginx config files in the following locations:
 
-- `conf.d/blue-green/{domain}.blue.conf` - Blue environment configuration
-- `conf.d/blue-green/{domain}.green.conf` - Green environment configuration
+- `conf.d/staging/{domain}.{color}.conf` - New configs before validation
+- `conf.d/blue-green/{domain}.blue.conf` - Blue environment configuration (validated)
+- `conf.d/blue-green/{domain}.green.conf` - Green environment configuration (validated)
 - `conf.d/{domain}.conf` - **Symlink** pointing to the active environment (`blue-green/{domain}.blue.conf` or `blue-green/{domain}.green.conf`)
 
-**Note**: Blue and green configs are stored in the `blue-green/` subdirectory to prevent nginx from reading both files simultaneously (which would cause duplicate upstream definitions). Only the symlinks in `conf.d/` are included by nginx.
+**Note**:
 
-### Configuration Generation
+- Blue and green configs are stored in the `blue-green/` subdirectory to prevent nginx from reading both files simultaneously (which would cause duplicate upstream definitions). Only the symlinks in `conf.d/` are included by nginx.
+- New configs are always generated into `staging/`, validated in isolation with existing configs, and only then moved into `blue-green/` or rejected into `rejected/`.
 
-Configs are auto-generated from the service registry using the template system:
+### Configuration Generation and Validation
+
+Configs are auto-generated from the service registry using the template system and always pass through the validation pipeline:
 
 1. **Template**: `nginx/templates/domain-blue-green.conf.template`
 2. **Auto-detection**: Services are automatically detected from the service registry JSON
-3. **Upstream blocks**: Generated for each service with proper blue/green container names
-4. **Independence**: Configs are generated from registry, not container state - nginx can start even if containers are not running
+3. **Upstream blocks**: Generated for each service with proper blue/green container names and Docker DNS-based resolution
+4. **Generation to staging**: Blue and green configs are written to `nginx/conf.d/staging/{domain}.blue.conf` and `.green.conf`.
+5. **Isolated validation**: Each staging config is validated in isolation together with all existing validated configs using the shared `utils.sh` helpers.
+6. **Promotion or rejection**:
+   - If validation succeeds, configs are moved to `nginx/conf.d/blue-green/`.
+   - If validation fails, configs are moved to `nginx/conf.d/rejected/` and nginx continues running with existing configs.
+7. **Independence**: Configs are generated from registry, not container state - nginx can start even if containers are not running.
 
 **Important**: Nginx resolves hostnames at runtime via DNS, not at startup. This means:
 
@@ -539,7 +548,7 @@ tail -f /nginx-microservice/logs/blue-green/deploy.log
 
 ### Deployment Fails During Prepare
 
-**Symptom**: `prepare-green.sh` exits with error
+**Symptom**: `prepare-green-smart.sh` exits with error
 
 **Possible causes**:
 
@@ -614,7 +623,7 @@ tail -f /nginx-microservice/logs/blue-green/deploy.log
 
 ## Best Practices
 
-1. **Always test prepare-green.sh first** before full deployment
+1. **Always test prepare-green-smart.sh first** before full deployment
 2. **Monitor logs** during first deployments
 3. **Keep blue running** until green is verified healthy
 4. **Use health checks** that test actual functionality, not just "is running"
@@ -628,8 +637,8 @@ tail -f /nginx-microservice/logs/blue-green/deploy.log
 For more control, run scripts individually:
 
 ```bash
-# 1. Prepare green
-./scripts/blue-green/prepare-green.sh crypto-ai-agent
+# 1. Prepare green (validated configs generated to staging/ and promoted to blue-green/)
+./scripts/blue-green/prepare-green-smart.sh crypto-ai-agent
 
 # 2. Verify green is ready
 cat /nginx-microservice/state/crypto-ai-agent.json | jq .green.status
@@ -650,9 +659,9 @@ cat /nginx-microservice/state/crypto-ai-agent.json | jq .green.status
 2. Create initial state file in `/nginx-microservice/state/`
 3. Create `docker-compose.blue.yml` and `docker-compose.green.yml` in service repo
 4. Run migration to generate blue/green configs: `./scripts/blue-green/migrate-to-symlinks.sh {service-name}`
-5. Test deployment: `./scripts/blue-green/deploy.sh {service-name}`
+5. Test deployment: `./scripts/blue-green/deploy-smart.sh {service-name}`
 
-**Note**: The migration script automatically generates blue and green nginx configs from the template based on your service registry. No manual nginx config editing required.
+**Note**: The migration script automatically generates blue and green nginx configs from the template based on your service registry, routes them through the staging + validation + blue/green pipeline, and never applies invalid configs. No manual nginx config editing is required or recommended.
 
 ## Performance
 
