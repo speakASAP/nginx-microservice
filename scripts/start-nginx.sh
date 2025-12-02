@@ -49,7 +49,7 @@ start_nginx_microservice() {
     if [ $status_code -eq 2 ]; then
         # Container is restarting - zero tolerance, run diagnostic and exit
         print_error "nginx-microservice is in RESTARTING state - zero tolerance policy"
-        run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
+        run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice is restarting"
     elif [ $status_code -eq 0 ]; then
         # Container is running - check nginx config directories first (for diagnostics)
         print_success "nginx-microservice is ${GREEN_CHECK} already running"
@@ -112,7 +112,7 @@ start_nginx_microservice() {
             print_detail "Container status: $container_status_full"
             print_detail "Container logs (last 30 lines):"
             docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice is unhealthy"
         fi
         
         # Check if nginx process is actually running inside container
@@ -129,7 +129,7 @@ start_nginx_microservice() {
             print_detail "Container logs (last 30 lines):"
             docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
             print_error "Nginx must be running - zero tolerance policy"
-            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "Nginx process is not running"
+            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "Nginx process is not running"
         fi
         
         return 0
@@ -204,7 +204,7 @@ start_nginx_microservice() {
             if [ $status_code -eq 2 ]; then
                 # Container is restarting - zero tolerance
                 print_error "nginx-microservice is in RESTARTING state after $attempt attempts"
-                run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is restarting"
+                run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice is restarting"
             elif [ $status_code -eq 0 ]; then
                 # Container is running - check nginx config directories first (for diagnostics)
                 print_success "nginx-microservice is ${GREEN_CHECK} running"
@@ -267,7 +267,7 @@ start_nginx_microservice() {
                     print_detail "Container status: $container_status_full"
                     print_detail "Container logs (last 30 lines):"
                     docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice is unhealthy"
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice is unhealthy"
                 fi
                 
                 # Check if nginx process is actually running inside container
@@ -285,7 +285,7 @@ start_nginx_microservice() {
                     print_detail "Container logs (last 30 lines):"
                     docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
                     print_error "Nginx must be running - zero tolerance policy"
-                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "Nginx process is not running"
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "Nginx process is not running"
                 fi
                 
                 return 0
@@ -302,7 +302,7 @@ start_nginx_microservice() {
         print_error "nginx-microservice container did not start after $max_attempts attempts"
         print_detail "Container logs (last 20 lines):"
         docker compose logs --tail=20 nginx 2>&1 | sed 's/^/  /' || true
-        run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose-nginx-restart.sh" "nginx-microservice" "nginx-microservice failed to start"
+        run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice failed to start"
     else
         print_error "Failed to start nginx-microservice"
         print_detail "Docker compose logs:"

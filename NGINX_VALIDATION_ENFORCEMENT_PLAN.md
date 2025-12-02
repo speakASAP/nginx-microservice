@@ -44,7 +44,7 @@
      - Ensures `nginx-network` exists.
      - Starts `nginx-microservice` via `docker compose up -d`.
      - Inspects `staging`, `rejected`, and `blue-green` directories and surfaces their state for diagnostics.
-     - Enforces zero-tolerance only for nginx itself being down, restarting, or unhealthy (runs `diagnose-nginx-restart.sh` in such cases).
+     - Enforces zero-tolerance only for nginx itself being down, restarting, or unhealthy (runs `diagnose.sh nginx-microservice --check restart` in such cases).
    - `scripts/restart-nginx.sh`:
      - Calls `sync-containers-and-nginx.sh` first (which uses validated configs).
      - Runs `nginx -t` and on failure still attempts reload/restart while preserving validated configs.
@@ -52,7 +52,7 @@
      - Runs `nginx -t`; on failure, still attempts `nginx -s reload` and only fails if reload itself fails.
 
 4. **Diagnostics and orchestration**
-   - Diagnostic scripts (`diagnose-nginx-restart.sh`, `diagnose-nginx-502.sh`) only **read** configs and container state; they do not write or activate configs.
+   - Diagnostic script (`diagnose.sh`) only **reads** configs and container state; it does not write or activate configs. (Note: Old scripts `diagnose-nginx-restart.sh` and `diagnose-nginx-502.sh` are deprecated in favor of the consolidated `diagnose.sh`.)
    - Startup orchestration scripts (`start-all-services.sh`, `start-infrastructure.sh`, `start-microservices.sh`, `start-applications.sh`, `startup-utils.sh`) delegate nginx handling to the validated paths and do not write config files directly.
 
 5. **Legacy / non-conforming path**

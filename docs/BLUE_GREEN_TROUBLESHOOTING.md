@@ -126,11 +126,12 @@ The diagnostic script automatically identifies the root cause:
 ```bash
 cd /path/to/nginx-microservice
 
-# Run diagnostic
-./scripts/diagnose-nginx-restart.sh
+# Run diagnostic (generic tool for all containers)
+./scripts/diagnose.sh nginx-microservice
 
-# Or with specific container ID
-./scripts/diagnose-nginx-restart.sh fa26210e28e3bcf03eb72b3aa55c14e988bef4f2f3495506239f788d77d6856e
+# Or with specific check type
+./scripts/diagnose.sh nginx-microservice --check restart
+./scripts/diagnose.sh nginx-microservice --check health
 ```
 
 The diagnostic script will:

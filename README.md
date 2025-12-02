@@ -30,10 +30,43 @@ nginx-microservice/
 ├── nginx/              # Nginx configuration and Dockerfile
 ├── certbot/            # Certbot scripts for certificate management
 ├── scripts/            # Management scripts (add-domain, remove-domain, etc.)
+│   ├── common/         # Modular utility functions (registry, state, config, nginx, etc.)
+│   ├── blue-green/     # Blue/green deployment scripts
+│   └── ...             # Service management scripts
 ├── certificates/       # SSL certificates (host storage)
 ├── logs/               # Log files (host storage)
 └── webroot/            # Let's Encrypt challenge files
 ```
+
+### Script Architecture
+
+The scripts are organized into a modular architecture for maintainability:
+
+**Common Modules** (`scripts/common/`):
+
+- `output.sh` - Unified output formatting (colors, status messages)
+- `registry.sh` - Service registry functions (load, query)
+- `state.sh` - State management (blue/green state tracking)
+- `config.sh` - Config generation (upstream blocks, proxy locations)
+- `nginx.sh` - Nginx management (validation, testing, reloading)
+- `containers.sh` - Container management (port checking, container cleanup)
+- `network.sh` - Network functions (HTTPS checks)
+- `diagnostics.sh` - Diagnostic functions
+- `fault-tolerance.sh` - Tiered failure handling (infrastructure vs applications)
+
+**Blue/Green Utilities** (`scripts/blue-green/utils.sh`):
+
+- Acts as a module loader that sources all common modules
+- Provides blue/green specific logging (`log_message`)
+- Maintains backward compatibility with existing scripts
+
+**Benefits**:
+
+- ✅ **Modular**: Functions organized by concern (registry, state, config, etc.)
+- ✅ **Maintainable**: Small, focused modules instead of one large file
+- ✅ **Reusable**: Common functions can be used across all scripts
+- ✅ **Testable**: Each module can be tested independently
+- ✅ **Backward Compatible**: Existing scripts continue working via `utils.sh` loader
 
 ## Quick Start
 
@@ -588,6 +621,12 @@ All services have dependencies that must be respected when starting the system. 
 3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payment-microservice → notifications-microservice
 4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → e-commerce
 
+**Fault Tolerance**:
+
+- **Infrastructure & Microservices**: Zero tolerance - system exits if these fail (critical services)
+- **Applications**: Fault tolerant - applications can fail independently without stopping the system
+- If an application fails to start, other applications continue running normally
+
 **Note**: Nginx is the primary service and must always start. There is no `--skip-nginx` flag. Nginx will be restarted/reloaded when new services are added, which serves as an additional test point.
 
 ### Services Quick Start
@@ -628,7 +667,6 @@ For detailed documentation, see:
 
 - `deploy-smart.sh` - **RECOMMENDED**: Full deployment cycle (only rebuilds changed services)
 - `prepare-green-smart.sh` - **RECOMMENDED**: Build and start new deployment (only rebuilds changed services)
-- `prepare-green.sh` - Build and start new deployment (DEPRECATED: always rebuilds all services, use prepare-green-smart.sh)
 - `switch-traffic.sh` - Switch traffic to new color (uses modern symlink-based switching)
 - `migrate-to-symlinks.sh` - Migrate services to symlink-based blue/green system
 - `health-check.sh` - Check service health
@@ -649,7 +687,7 @@ For detailed documentation, see:
 - `sync-containers-and-nginx.sh` - Syncs containers and symlinks, optionally restarts nginx
 - `reload-nginx.sh` - Reloads nginx configuration (lightweight, no restart)
 - `status-all-services.sh` - Shows status of all services and containers
-- `diagnose-nginx-restart.sh` - **RECOMMENDED**: Comprehensive diagnostic tool for nginx container restart loops
+- `diagnose.sh` - **RECOMMENDED**: Comprehensive diagnostic tool for all containers (replaces old diagnose-nginx-restart.sh and diagnose-nginx-502.sh)
 
 **Note**: The blue/green system uses a modern symlink-based approach where each service has separate blue and green config files (`{domain}.blue.conf` and `{domain}.green.conf`), with a symlink (`{domain}.conf`) pointing to the active environment. This replaces the legacy file-modification approach.
 

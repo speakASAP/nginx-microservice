@@ -194,7 +194,7 @@ State is stored in: `/nginx-microservice/state/{service-name}.json`
 4. Reloads nginx configuration
 5. Updates state file
 
-**When to use**: After prepare-green.sh if you want manual control
+**When to use**: After prepare-green-smart.sh if you want manual control
 
 **Note**: Uses modern symlink-based switching (no file modifications)
 

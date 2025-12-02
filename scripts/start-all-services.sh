@@ -99,25 +99,30 @@ else
     print_status "Skipping microservices"
 fi
 
-# Phase 4: Applications
+# Phase 4: Applications (fault-tolerant)
 if [ "$SKIP_APPLICATIONS" = false ]; then
     print_status ""
     print_status "Phase 4: Starting Applications"
     print_status "------------------------------"
+    print_status "Note: Applications are fault-tolerant - failures won't stop the system"
+    print_status ""
     
+    # Start applications with fault tolerance enabled
+    # This allows applications to fail independently without stopping the system
     if [ -n "$SINGLE_SERVICE" ]; then
-        if ! "${SCRIPT_DIR}/start-applications.sh" --service "$SINGLE_SERVICE"; then
-            print_error "Failed to start application: $SINGLE_SERVICE"
-            exit 1
-        fi
+        # Single service mode - still use fault tolerance
+        "${SCRIPT_DIR}/start-applications.sh" --service "$SINGLE_SERVICE" --continue-on-failure || {
+            print_warning "Application $SINGLE_SERVICE had issues, but system continues running"
+        }
     else
-        if ! "${SCRIPT_DIR}/start-applications.sh"; then
-            print_error "Failed to start applications phase"
-            exit 1
-        fi
+        # All applications mode - fault tolerant
+        "${SCRIPT_DIR}/start-applications.sh" --continue-on-failure || {
+            print_warning "Some applications had issues, but system continues running"
+        }
     fi
     
-    print_success "Applications phase completed"
+    print_status ""
+    print_success "Applications phase completed (fault-tolerant mode)"
 else
     print_status "Skipping applications"
 fi
@@ -161,3 +166,4 @@ if [ -f "${SCRIPT_DIR}/status-all-services.sh" ]; then
 fi
 
 exit 0
+

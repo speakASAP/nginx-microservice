@@ -94,8 +94,8 @@ else
             echo "⚠️  Nginx container is restarting after restart attempt"
             echo "   This indicates a restart loop. Running diagnostic..."
             echo ""
-            if [ -f "${SCRIPT_DIR}/diagnose-nginx-restart.sh" ]; then
-                "${SCRIPT_DIR}/diagnose-nginx-restart.sh"
+            if [ -f "${SCRIPT_DIR}/diagnose.sh" ]; then
+                "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice"
             else
                 echo "   Container logs:"
                 docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/   /' || true
@@ -111,7 +111,7 @@ else
             echo "   docker compose logs nginx"
             echo ""
             echo "   Or run diagnostic script:"
-            echo "   ./scripts/diagnose-nginx-restart.sh"
+            echo "   ./scripts/diagnose.sh nginx-microservice"
             exit 1
         fi
     else

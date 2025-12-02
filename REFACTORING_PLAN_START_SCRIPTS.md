@@ -88,7 +88,7 @@ Refactor `scripts/start-all-services.sh` into 4 separate, focused scripts plus a
 When any issue is detected:
 
 1. Print error message with context
-2. Run appropriate diagnostic script (e.g., diagnose-nginx-restart.sh)
+2. Run appropriate diagnostic script (e.g., `diagnose.sh <container-name> --check <type>`)
 3. Exit with non-zero code
 4. Provide clear instructions for user
 
@@ -134,7 +134,7 @@ Create `scripts/startup-utils.sh` with common functions:
 **Error Handling**:
 
 - If nginx-network creation fails → exit
-- If nginx container is restarting → run `diagnose-nginx-restart.sh`, exit
+- If nginx container is restarting → run `diagnose.sh nginx-microservice --check restart`, exit
 - If nginx config test fails → show error, exit
 - If nginx not running after max attempts → run diagnostic, exit
 

@@ -87,7 +87,14 @@ run_diagnostic_and_exit() {
     
     print_error "$error_message"
     
-    if [ -f "$diagnostic_script" ]; then
+    # Use new unified diagnose.sh if available, fallback to old script
+    local diagnose_script="${SCRIPT_DIR}/diagnose.sh"
+    
+    if [ -f "$diagnose_script" ] && [ -n "$container_name" ]; then
+        print_status "Running diagnostic tool: diagnose.sh $container_name"
+        bash "$diagnose_script" "$container_name" || true
+    elif [ -f "$diagnostic_script" ]; then
+        # Fallback to old diagnostic script for backward compatibility
         print_status "Running diagnostic script: $diagnostic_script"
         if [ -n "$container_name" ]; then
             bash "$diagnostic_script" "$container_name" || true
@@ -96,6 +103,10 @@ run_diagnostic_and_exit() {
         fi
     else
         print_warning "Diagnostic script not found: $diagnostic_script"
+        if [ -n "$container_name" ] && [ -f "$diagnose_script" ]; then
+            print_status "Using generic diagnostic tool: diagnose.sh $container_name"
+            bash "$diagnose_script" "$container_name" || true
+        fi
     fi
     
     exit 1

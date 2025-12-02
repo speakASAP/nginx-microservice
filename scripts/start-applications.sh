@@ -1,9 +1,10 @@
 #!/bin/bash
 # Start Applications Phase
 # Starts all applications
-# Usage: start-applications.sh [--service <name>]
+# Usage: start-applications.sh [--service <name>] [--continue-on-failure]
 
-set -e
+# Note: set -e is not used here to allow fault-tolerant behavior
+# Individual application failures are handled gracefully
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -42,15 +43,20 @@ discover_applications() {
 
 # Parse arguments
 SINGLE_SERVICE=""
+CONTINUE_ON_FAILURE=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --service)
             SINGLE_SERVICE="$2"
             shift 2
             ;;
+        --continue-on-failure)
+            CONTINUE_ON_FAILURE=true
+            shift
+            ;;
         *)
             print_error "Unknown option: $1"
-            echo "Usage: start-applications.sh [--service <name>]"
+            echo "Usage: start-applications.sh [--service <name>] [--continue-on-failure]"
             exit 1
             ;;
     esac
@@ -347,14 +353,22 @@ if [ $fail_count -gt 0 ]; then
     print_status ""
 fi
 
-# Only exit successfully if ALL applications passed
+# Exit behavior based on --continue-on-failure flag
 if [ $fail_count -eq 0 ] && [ $success_count -eq $service_count ]; then
     print_success "All $service_count application(s) started and verified successfully"
     exit 0
+elif [ "$CONTINUE_ON_FAILURE" = "true" ]; then
+    # Fault-tolerant mode: report failures but exit successfully
+    print_warning "Applications phase completed with some failures (fault-tolerant mode)"
+    print_warning "Expected: $service_count applications, Success: $success_count, Failed: $fail_count"
+    print_status "System continues running with available applications"
+    exit 0  # Exit successfully to allow system to continue
 else
+    # Strict mode: exit with error if any application failed
     print_error "Applications phase completed with errors"
     print_error "Expected: $service_count applications, Success: $success_count, Failed: $fail_count"
     print_error "Script will exit with error - all applications must pass for success"
+    print_error "Use --continue-on-failure flag to continue on application failures"
     exit 1
 fi
 

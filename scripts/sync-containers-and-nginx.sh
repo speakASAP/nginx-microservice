@@ -24,7 +24,7 @@ if [ "$1" = "--restart-nginx" ]; then
     RESTART_NGINX=true
 fi
 
-# Source utils
+# Source utils (provides all print functions and utility functions)
 if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
     source "${BLUE_GREEN_DIR}/utils.sh"
 else
@@ -32,21 +32,8 @@ else
     exit 1
 fi
 
-print_status() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_warning() {
-    echo -e "${YELLOW}[WARNING]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
+# Print functions are now available from utils.sh (via output.sh module)
+# No need to redefine them
 
 # Function to check if container is running
 container_running() {
