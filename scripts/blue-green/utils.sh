@@ -889,10 +889,34 @@ ensure_blue_green_configs() {
                 local blue_config="${blue_green_dir}/${statex_domain}.blue.conf"
                 local green_config="${blue_green_dir}/${statex_domain}.green.conf"
                 
-                # Check if both configs exist
+                # Check if both configs exist and are valid (no template variables)
+                local needs_regeneration=false
                 if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
-                    log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $statex_domain"
-                    continue
+                    # Check for template variables that indicate invalid configs
+                    if grep -qE "^(blue_weight|green_weight|blue_backup|green_backup)=" "$blue_config" "$green_config" 2>/dev/null; then
+                        log_message "WARNING" "$service_name" "config" "ensure" "Configs contain template variables, forcing regeneration for $statex_domain"
+                        needs_regeneration=true
+                    elif ! grep -qE "resolve;" "$blue_config" "$green_config" 2>/dev/null; then
+                        log_message "WARNING" "$service_name" "config" "ensure" "Configs missing resolve directive, forcing regeneration for $statex_domain"
+                        needs_regeneration=true
+                    else
+                        log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $statex_domain"
+                        continue
+                    fi
+                else
+                    needs_regeneration=true
+                fi
+                
+                # Remove invalid configs if regeneration is needed
+                if [ "$needs_regeneration" = true ]; then
+                    if [ -f "$blue_config" ]; then
+                        rm -f "$blue_config"
+                        log_message "INFO" "$service_name" "config" "ensure" "Removed invalid blue config for $statex_domain"
+                    fi
+                    if [ -f "$green_config" ]; then
+                        rm -f "$green_config"
+                        log_message "INFO" "$service_name" "config" "ensure" "Removed invalid green config for $statex_domain"
+                    fi
                 fi
                 
                 # Generate configs if missing
@@ -921,10 +945,34 @@ ensure_blue_green_configs() {
     local blue_config="${blue_green_dir}/${domain}.blue.conf"
     local green_config="${blue_green_dir}/${domain}.green.conf"
     
-    # Check if both configs exist (already validated)
+    # Check if both configs exist and are valid (no template variables)
+    local needs_regeneration=false
     if [ -f "$blue_config" ] && [ -f "$green_config" ]; then
-        log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist and validated for $domain"
-        return 0
+        # Check for template variables that indicate invalid configs
+        if grep -qE "^(blue_weight|green_weight|blue_backup|green_backup)=" "$blue_config" "$green_config" 2>/dev/null; then
+            log_message "WARNING" "$service_name" "config" "ensure" "Configs contain template variables, forcing regeneration for $domain"
+            needs_regeneration=true
+        elif ! grep -qE "resolve;" "$blue_config" "$green_config" 2>/dev/null; then
+            log_message "WARNING" "$service_name" "config" "ensure" "Configs missing resolve directive, forcing regeneration for $domain"
+            needs_regeneration=true
+        else
+            log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist and validated for $domain"
+            return 0
+        fi
+    else
+        needs_regeneration=true
+    fi
+    
+    # Remove invalid configs if regeneration is needed
+    if [ "$needs_regeneration" = true ]; then
+        if [ -f "$blue_config" ]; then
+            rm -f "$blue_config"
+            log_message "INFO" "$service_name" "config" "ensure" "Removed invalid blue config for $domain"
+        fi
+        if [ -f "$green_config" ]; then
+            rm -f "$green_config"
+            log_message "INFO" "$service_name" "config" "ensure" "Removed invalid green config for $domain"
+        fi
     fi
     
     # Generate configs if missing (will validate before applying)
