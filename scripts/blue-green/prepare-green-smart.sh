@@ -339,10 +339,54 @@ done <<< "$SERVICES"
 # Start/restart containers
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Starting containers for $PREPARE_COLOR"
 
-if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to start containers"
-    exit 1
+# Try to start containers, handle container name conflicts
+if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d 2>&1 | tee /tmp/docker-compose-output.log; then
+    # Check if error is due to container name conflict
+    if grep -q "is already in use by container" /tmp/docker-compose-output.log; then
+        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container name conflict detected, removing conflicting containers"
+        
+        # Extract container names from error messages
+        CONFLICTING_CONTAINERS=$(grep -oE "container name \"[^\"]+\"" /tmp/docker-compose-output.log | sed 's/container name "//;s/"//' | sort -u)
+        
+        # Remove conflicting containers
+        for container in $CONFLICTING_CONTAINERS; do
+            if [ -n "$container" ]; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Removing conflicting container: $container"
+                docker rm -f "$container" 2>/dev/null || true
+            fi
+        done
+        
+        # Also check for containers that match the expected naming pattern
+        while IFS= read -r service; do
+            CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services.${service}.container_name_base // empty" 2>/dev/null || echo "")
+            if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ]; then
+                CONTAINER_BASE="${DOCKER_PROJECT_BASE}-${service}"
+            fi
+            EXPECTED_CONTAINER="${CONTAINER_BASE}-${PREPARE_COLOR}"
+            
+            # Check if container exists (in any state)
+            if docker ps -a --format "{{.Names}}" | grep -qE "^${EXPECTED_CONTAINER}$"; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Removing existing container: $EXPECTED_CONTAINER"
+                docker rm -f "$EXPECTED_CONTAINER" 2>/dev/null || true
+            fi
+        done <<< "$SERVICES"
+        
+        # Retry starting containers
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Retrying container startup after removing conflicts"
+        if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" up -d; then
+            log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to start containers after removing conflicts"
+            rm -f /tmp/docker-compose-output.log
+            exit 1
+        fi
+    else
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to start containers"
+        rm -f /tmp/docker-compose-output.log
+        exit 1
+    fi
 fi
+
+# Cleanup temp file
+rm -f /tmp/docker-compose-output.log
 
 # Get startup times from registry
 FRONTEND_STARTUP=$(echo "$REGISTRY" | jq -r '.services.frontend.startup_time // empty')
