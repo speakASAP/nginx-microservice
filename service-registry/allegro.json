@@ -3,7 +3,7 @@
   "service_path": "/Users/sergiystashok/Documents/GitHub/allegro",
   "production_path": "/home/statex/allegro",
   "domain": "allegro.statex.cz",
-  "docker_compose_file": "docker-compose.allegro.blue.yml",
+  "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "allegro",
   "services": {
     "api-gateway": {
