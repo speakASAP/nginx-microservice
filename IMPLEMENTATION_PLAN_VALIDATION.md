@@ -16,25 +16,11 @@ Implement a system where nginx always runs independently of container state, and
 ### Current Flow
 
 ```text
-Generate Config → Write to conf.d/blue-green/ → Create Symlink → Test All Configs → Reload Nginx
-```
-
-### New Flow
-
-```text
 Generate Config → Write to conf.d/staging/ → Validate in Isolation → If Valid: Move to conf.d/blue-green/ → Create Symlink → Reload Nginx
                                                                    → If Invalid: Reject and Log Error → Keep Nginx Running
 ```
 
 ## Implementation Steps
-
-### 1. Create Staging Directory Structure
-
-**File**: `scripts/blue-green/utils.sh`
-
-- Add staging directory: `nginx/conf.d/staging/`
-- Add rejected directory: `nginx/conf.d/rejected/` (for logging/debugging)
-- Ensure directories exist in initialization
 
 ### 2. Implement Isolated Config Validation Function
 
@@ -141,12 +127,6 @@ Generate Config → Write to conf.d/staging/ → Validate in Isolation → If Va
 - `docs/CONTAINER_NGINX_SYNC.md`
 - `docs/BLUE_GREEN_DEPLOYMENT.md`
 
-**Updates**:
-
-- Document new validation system
-- Explain staging/rejected directories
-- Update troubleshooting section
-- Add examples of validation failures
 
 ## Technical Details
 
@@ -185,27 +165,3 @@ nginx/conf.d/
 4. **Test Nginx Independence**: Stop all containers, nginx should still start
 5. **Test Partial Failure**: One invalid config shouldn't prevent other valid configs from being applied
 
-## Rollback Plan
-
-If issues arise:
-
-1. Remove staging/rejected directories
-2. Revert to direct generation to blue-green directory
-3. Existing configs remain unchanged
-
-## Implementation Checklist
-
-- [ ] Create staging directory structure
-- [ ] Implement `validate_config_in_isolation()` function
-- [ ] Implement `validate_and_apply_config()` function
-- [ ] Modify `generate_blue_green_configs()` to use staging
-- [ ] Update `ensure_blue_green_configs()` to use validation
-- [ ] Update `sync_service_symlink()` to handle validation failures gracefully
-- [ ] Make `test_nginx_config()` more resilient
-- [ ] Update `restart-nginx.sh` to ensure nginx always starts
-- [ ] Add `cleanup_rejected_configs()` function
-- [ ] Update documentation
-- [ ] Test with valid configs
-- [ ] Test with invalid configs
-- [ ] Test with conflicting configs
-- [ ] Test nginx independence from containers

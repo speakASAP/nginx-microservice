@@ -8,6 +8,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 CONFIG_DIR="${PROJECT_DIR}/nginx/conf.d"
 TEMPLATE_FILE="${PROJECT_DIR}/nginx/templates/domain.conf.template"
+BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
+
+# Source blue/green utilities for validation and safe reload
+if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
+    # shellcheck disable=SC1090
+    source "${BLUE_GREEN_DIR}/utils.sh"
+else
+    echo "Error: Blue/Green utils not found: ${BLUE_GREEN_DIR}/utils.sh"
+    echo "Nginx config validation system is required for safe domain addition."
+    exit 1
+fi
 
 DOMAIN="$1"
 CONTAINER_NAME="$2"
@@ -31,10 +42,10 @@ if ! echo "$DOMAIN" | grep -qE '^([a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?\.
     exit 1
 fi
 
-# Check if config already exists
-CONFIG_FILE="${CONFIG_DIR}/${DOMAIN}.conf"
-if [ -f "$CONFIG_FILE" ]; then
-    echo "Warning: Configuration file already exists: $CONFIG_FILE"
+# Check if config already exists (symlink or file)
+SYMLINK_FILE="${CONFIG_DIR}/${DOMAIN}.conf"
+if [ -L "$SYMLINK_FILE" ] || [ -f "$SYMLINK_FILE" ]; then
+    echo "Warning: Nginx configuration already exists for domain: $SYMLINK_FILE"
     read -p "Do you want to overwrite it? (y/N): " -n 1 -r
     echo
     if [[ ! $REPLY =~ ^[Yy]$ ]]; then
@@ -49,20 +60,63 @@ if [ ! -f "$TEMPLATE_FILE" ]; then
     exit 1
 fi
 
+# Ensure validation directories exist
+ensure_config_directories
+
+STAGING_DIR="${CONFIG_DIR}/staging"
+BLUE_GREEN_CONF_DIR="${CONFIG_DIR}/blue-green"
+STAGING_CONFIG_FILE="${STAGING_DIR}/${DOMAIN}.blue.conf"
+VALIDATED_CONFIG_FILE="${BLUE_GREEN_CONF_DIR}/${DOMAIN}.blue.conf"
+
+# Prevent accidental overwrite of an existing validated config
+if [ -f "$VALIDATED_CONFIG_FILE" ]; then
+    echo "Warning: Validated config already exists: $VALIDATED_CONFIG_FILE"
+    read -p "Do you want to regenerate and re-validate it? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo "Aborted."
+        exit 1
+    fi
+fi
+
 echo "Adding domain: $DOMAIN"
 echo "  Container: $CONTAINER_NAME"
 echo "  Port: $PORT"
 echo "  Email: $EMAIL"
 echo ""
 
-# Generate config file from template
-echo "Generating configuration file..."
+# Generate config file from template into staging (blue config)
+echo "Generating nginx configuration file into staging (validation-first)..."
+mkdir -p "$STAGING_DIR"
 sed -e "s|{{DOMAIN_NAME}}|$DOMAIN|g" \
     -e "s|{{CONTAINER_NAME}}|$CONTAINER_NAME|g" \
     -e "s|{{CONTAINER_PORT}}|$PORT|g" \
-    "$TEMPLATE_FILE" > "$CONFIG_FILE"
+    "$TEMPLATE_FILE" > "$STAGING_CONFIG_FILE"
 
-echo "✅ Configuration file created: $CONFIG_FILE"
+echo "✅ Staging configuration file created: $STAGING_CONFIG_FILE"
+
+# Validate and apply config using central validation system
+echo ""
+echo "Validating nginx configuration in isolation..."
+if validate_and_apply_config "$DOMAIN" "$DOMAIN" "blue" "$STAGING_CONFIG_FILE"; then
+    echo "✅ Configuration validated and applied to blue-green directory:"
+    echo "   $VALIDATED_CONFIG_FILE"
+else
+    echo "❌ Configuration validation failed for domain: $DOMAIN"
+    echo "   Invalid config has been moved to nginx/conf.d/rejected/ with a timestamp."
+    echo "   Nginx continues running with existing valid configs."
+    exit 1
+fi
+
+# Ensure symlink points to the validated config
+echo ""
+echo "Updating nginx symlink for domain..."
+if switch_config_symlink "$DOMAIN" "blue"; then
+    echo "✅ Symlink updated: ${CONFIG_DIR}/${DOMAIN}.conf -> blue-green/${DOMAIN}.blue.conf"
+else
+    echo "❌ Failed to update nginx config symlink for domain: $DOMAIN"
+    exit 1
+fi
 
 # Certificate Management
 # Certificates are stored in ./certificates/<domain>/ on the host filesystem
@@ -127,25 +181,14 @@ else
     fi
 fi
 
-# Test nginx configuration
+# Reload nginx safely using shared helper
 echo ""
-echo "Testing nginx configuration..."
-if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -t 2>&1 | grep -q "syntax is ok"; then
-    echo "✅ Nginx configuration is valid"
+echo "Reloading nginx (safe reload via validation-aware helper)..."
+if reload_nginx; then
+    echo "✅ Nginx reloaded (or started) successfully"
 else
-    echo "❌ Nginx configuration test failed!"
-    echo "Please check the configuration file: $CONFIG_FILE"
-    exit 1
-fi
-
-# Reload nginx
-echo ""
-echo "Reloading nginx..."
-if docker compose -f "${PROJECT_DIR}/docker-compose.yml" exec nginx nginx -s reload; then
-    echo "✅ Nginx reloaded successfully"
-else
-    echo "⚠️  Failed to reload nginx. Please reload manually:"
-    echo "   docker compose exec nginx nginx -s reload"
+    echo "⚠️  Nginx reload helper reported an issue. Please inspect logs:"
+    echo "   docker compose logs nginx"
 fi
 
 # Verify container accessibility
