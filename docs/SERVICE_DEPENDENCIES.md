@@ -14,6 +14,9 @@ These services must be started first and have no dependencies on other services:
 - **Dependencies**: None
 - **Startup Order**: 1
 - **Network**: Creates `nginx-network`
+- **Ports**:
+  - **HTTP**: 80 (exposed on host)
+  - **HTTPS**: 443 (exposed on host)
 - **Health Check**: `nginx -t` (config test)
 
 #### database-server
@@ -39,7 +42,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 3 (can start first among microservices)
 - **Shared Services**: None
 - **Container**: `logging-microservice-blue` / `logging-microservice-green`
-- **Port**: 3367
+- **Host Port**: 3367, **Container Port**: 3367
 - **Health Endpoint**: `/health`
 
 #### auth-microservice
@@ -49,7 +52,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 4
 - **Shared Services**: `postgres`
 - **Container**: `auth-microservice-blue` / `auth-microservice-green`
-- **Port**: 3370
+- **Host Port**: 3370 (Blue) / 3371 (Green), **Container Port**: 3370
 - **Health Endpoint**: `/health`
 
 #### payment-microservice
@@ -69,7 +72,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 6
 - **Shared Services**: `postgres`, `redis`
 - **Container**: `notifications-microservice-blue` / `notifications-microservice-green`
-- **Port**: 3368
+- **Host Port**: 3368, **Container Port**: 3368
 - **Health Endpoint**: `/health`
 
 ### 3. Applications (May Depend on Microservices)
