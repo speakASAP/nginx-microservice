@@ -59,7 +59,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 5
 - **Shared Services**: `postgres`
 - **Container**: `payment-microservice-blue` / `payment-microservice-green`
-- **Port**: 3468
+- **Host Port**: 3369 (Blue/Green), **Container Port**: 3468
 - **Health Endpoint**: `/health`
 
 #### notifications-microservice
@@ -69,7 +69,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 6
 - **Shared Services**: `postgres`, `redis`
 - **Container**: `notifications-microservice-blue` / `notifications-microservice-green`
-- **Port**: 8005
+- **Port**: 3368
 - **Health Endpoint**: `/health`
 
 ### 3. Applications (May Depend on Microservices)
@@ -83,10 +83,10 @@ These applications may depend on microservices and should be started after all m
 - **Startup Order**: 8
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
-  - `crypto-ai-backend-blue` / `crypto-ai-backend-green` (Port: 8100)
+  - `crypto-ai-backend-blue` / `crypto-ai-backend-green` (Port: 3102)
   - `crypto-ai-frontend-blue` / `crypto-ai-frontend-green` (Port: 3100)
 - **Health Endpoints**:
-  - Backend: `/health`
+  - Backend: `/api/health`
   - Frontend: `/`
 
 #### statex
@@ -115,7 +115,7 @@ These applications may depend on microservices and should be started after all m
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
   - `e-commerce-frontend-blue` / `e-commerce-frontend-green` (Port: 3000)
-  - `e-commerce-api-gateway-blue` / `e-commerce-api-gateway-green` (Port: 3001)
+  - `e-commerce-api-gateway-blue` / `e-commerce-api-gateway-green` (Port: 3011)
   - Plus 10+ internal services (managed by e-commerce docker-compose)
 - **Health Endpoints**:
   - Frontend: `/`
@@ -231,7 +231,7 @@ Each service has a registry file in `service-registry/` that defines:
 
 - **Shared Infrastructure**: `database-server` provides shared PostgreSQL and Redis for all services that need them. This prevents data corruption and ensures consistency.
 
-- **Nginx Upstreams**: All nginx configs use placeholder upstreams (`127.0.0.1:65535 down`) until containers are deployed. The deployment scripts automatically update these when containers are created.
+- **Nginx Upstreams**: All nginx configs are generated from the service registry and use Docker DNS-based container discovery. Configs are generated independently of container state, allowing nginx to start even when containers are not running.
 
 - **Health Checks**: Each service must pass health checks before the next phase starts. This ensures dependencies are ready.
 

@@ -221,7 +221,7 @@ docker logs crypto-ai-backend-green
 docker logs crypto-ai-frontend-green
 
 # 2. Check health endpoints manually
-curl http://crypto-ai-backend-green:8100/health
+curl http://crypto-ai-backend-green:3102/api/health
 curl http://crypto-ai-frontend-green:3100/
 
 # 3. Check deployment logs
@@ -570,8 +570,8 @@ docker compose logs nginx --tail 100 -f
 
 ```bash
 # Backend health
-curl http://crypto-ai-backend-blue:8100/health
-curl http://crypto-ai-backend-green:8100/health
+curl http://crypto-ai-backend-blue:3102/api/health
+curl http://crypto-ai-backend-green:3102/api/health
 
 # Frontend health
 curl http://crypto-ai-frontend-blue:3100/

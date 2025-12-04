@@ -8,7 +8,7 @@
   "services": {
     "backend": {
       "container_name_base": "crypto-ai-backend",
-      "port": 8100,
+      "port": 3102,
       "health_endpoint": "/api/health",
       "health_timeout": 5,
       "health_retries": 3,

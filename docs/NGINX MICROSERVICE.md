@@ -138,8 +138,9 @@ nginx-microservice/
 Containers are discovered via Docker DNS using container names:
 
 - Format: `http://container-name:port`
-- Example: `http://statex.cz:3000`
-- Example: `http://crypto-ai-agent-frontend:3100`
+- Example: `http://statex-frontend:3000`
+- Example: `http://crypto-ai-frontend:3100`
+- Example: `http://crypto-ai-backend:3102`
 
 All containers must be on the same Docker network (`nginx-network`).
 
