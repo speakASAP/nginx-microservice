@@ -42,7 +42,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 3 (can start first among microservices)
 - **Shared Services**: None
 - **Container**: `logging-microservice-blue` / `logging-microservice-green`
-- **Host Port**: 3367, **Container Port**: 3367
+- **Host Port**: `${PORT:-3367}` (configured in `logging-microservice/.env`), **Container Port**: `${PORT:-3367}`
 - **Health Endpoint**: `/health`
 
 #### auth-microservice
@@ -52,7 +52,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 4
 - **Shared Services**: `postgres`
 - **Container**: `auth-microservice-blue` / `auth-microservice-green`
-- **Host Port**: 3370 (Blue) / 3371 (Green), **Container Port**: 3370
+- **Host Port**: `${PORT:-3370}` (Blue, configured in `auth-microservice/.env`) / 3371 (Green), **Container Port**: `${PORT:-3370}`
 - **Health Endpoint**: `/health`
 
 #### payment-microservice
@@ -62,7 +62,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 5
 - **Shared Services**: `postgres`
 - **Container**: `payment-microservice-blue` / `payment-microservice-green`
-- **Host Port**: 3369 (Blue/Green), **Container Port**: 3468
+- **Host Port**: `${PORT_BLUE:-3369}` / `${PORT_GREEN:-3369}` (configured in `payment-microservice/.env`), **Container Port**: `${SERVICE_PORT:-3468}`
 - **Health Endpoint**: `/health`
 
 #### notifications-microservice
@@ -72,7 +72,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 6
 - **Shared Services**: `postgres`, `redis`
 - **Container**: `notifications-microservice-blue` / `notifications-microservice-green`
-- **Host Port**: 3368, **Container Port**: 3368
+- **Host Port**: `${PORT:-3368}` (configured in `notifications-microservice/.env`), **Container Port**: `${PORT:-3368}`
 - **Health Endpoint**: `/health`
 
 ### 3. Applications (May Depend on Microservices)
