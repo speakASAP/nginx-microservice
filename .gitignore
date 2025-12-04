@@ -1,5 +1,9 @@
-# Environment files
-.env
+*backup*
+*bck*
+
+# Environment variables
+.env*
+!.env.example
 
 # Certificates (sensitive data)
 certificates/
