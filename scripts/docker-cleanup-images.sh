@@ -1,6 +1,7 @@
 #!/bin/bash
-# Clean up unused Docker images every 4 hours
-# This script removes only unused images, keeps running containers and volumes intact
+# Comprehensive Docker cleanup script - runs every 4 hours via cron
+# Removes: stopped containers, unused images, unused volumes, build cache, unused networks
+# Preserves: running containers and their associated resources
 
 # Set PATH for cron environment (Docker might not be in default PATH)
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -15,12 +16,37 @@ log_message() {
     echo "[$timestamp] $message" >> "$LOG_FILE" 2>&1
 }
 
+# Function to check disk space and return percentage free
+get_disk_free_percent() {
+    df / | tail -1 | awk '{print $5}' | sed 's/%//'
+}
+
+# Function to run cleanup command and log results
+run_cleanup() {
+    local cleanup_type="$1"
+    local command="$2"
+    log_message "Cleaning up $cleanup_type..."
+    local output=$($command 2>&1)
+    local exit_code=$?
+    if [ $exit_code -eq 0 ]; then
+        log_message "✓ $cleanup_type cleanup completed"
+        echo "$output" >> "$LOG_FILE" 2>&1
+        # Extract reclaimed space if available
+        local reclaimed=$(echo "$output" | grep -i "reclaimed" || echo "")
+        if [ -n "$reclaimed" ]; then
+            log_message "$reclaimed"
+        fi
+    else
+        log_message "✗ $cleanup_type cleanup failed (exit code: $exit_code)"
+        echo "$output" >> "$LOG_FILE" 2>&1
+    fi
+    return $exit_code
+}
+
 # Ensure log file is writable (fix permissions if needed)
 touch "$LOG_FILE" 2>/dev/null || {
-    # If we can't write to the log file, try to create it in /var/log instead
     LOG_FILE="/var/log/docker-cleanup.log"
     touch "$LOG_FILE" 2>/dev/null || {
-        # Last resort: use syslog
         logger -t docker-cleanup "ERROR: Cannot write to log file"
         exit 1
     }
@@ -29,7 +55,7 @@ touch "$LOG_FILE" 2>/dev/null || {
 # Set proper permissions on log file (readable by statex user)
 chmod 644 "$LOG_FILE" 2>/dev/null || true
 
-log_message "=== Docker Image Cleanup Started ==="
+log_message "=== Docker Comprehensive Cleanup Started ==="
 
 # Check if Docker is available
 if ! command -v docker >/dev/null 2>&1; then
@@ -45,50 +71,50 @@ fi
 
 # Get disk usage before cleanup
 DISK_BEFORE=$(df -h / | tail -1 | awk '{print $3 " used, " $4 " free"}' 2>/dev/null || echo "unknown")
-log_message "Disk usage before: $DISK_BEFORE"
+DISK_FREE_PERCENT=$(get_disk_free_percent)
+log_message "Disk usage before: $DISK_BEFORE (${DISK_FREE_PERCENT}% free)"
 
-# Get image count before cleanup
-IMAGES_BEFORE=$(docker images -q 2>/dev/null | wc -l)
-log_message "Images before cleanup: $IMAGES_BEFORE"
-
-# Get list of images used by running containers
-RUNNING_CONTAINER_IMAGES=$(docker ps --format "{{.Image}}" 2>/dev/null | sort -u)
-RUNNING_COUNT=$(echo "$RUNNING_CONTAINER_IMAGES" | grep -v '^$' | wc -l)
-log_message "Images in use by running containers: $RUNNING_COUNT"
-
-# Remove unused images (not used by any container)
-# docker image prune -a removes all images not associated with a container
-# -f flag forces removal without confirmation
-log_message "Removing unused images..."
-
-PRUNE_OUTPUT=$(docker image prune -a -f 2>&1)
-PRUNE_EXIT=$?
-
-if [ $PRUNE_EXIT -eq 0 ]; then
-    log_message "✓ Image cleanup completed successfully"
-    echo "$PRUNE_OUTPUT" >> "$LOG_FILE" 2>&1
-    
-    # Extract reclaimed space from output
-    RECLAIMED=$(echo "$PRUNE_OUTPUT" | grep -i "reclaimed" || echo "Space reclaimed: unknown")
-    log_message "$RECLAIMED"
-else
-    log_message "✗ Image cleanup failed with exit code: $PRUNE_EXIT"
-    echo "$PRUNE_OUTPUT" >> "$LOG_FILE" 2>&1
+# Warn if disk space is critically low
+if [ "$DISK_FREE_PERCENT" -gt 90 ]; then
+    log_message "WARNING: Disk space critically low (${DISK_FREE_PERCENT}% used). Aggressive cleanup will be performed."
 fi
 
-# Get image count after cleanup
+# Get resource counts before cleanup
+IMAGES_BEFORE=$(docker images -q 2>/dev/null | wc -l)
+CONTAINERS_BEFORE=$(docker ps -a -q 2>/dev/null | wc -l)
+VOLUMES_BEFORE=$(docker volume ls -q 2>/dev/null | wc -l)
+log_message "Resources before cleanup: Images: $IMAGES_BEFORE, Containers: $CONTAINERS_BEFORE, Volumes: $VOLUMES_BEFORE"
+
+# Cleanup stopped containers
+run_cleanup "stopped containers" "docker container prune -f"
+
+# Cleanup unused images (all unused images, not just dangling)
+run_cleanup "unused images" "docker image prune -a -f"
+
+# Cleanup unused volumes (only truly unused volumes)
+run_cleanup "unused volumes" "docker volume prune -f"
+
+# Cleanup build cache
+run_cleanup "build cache" "docker builder prune -a -f"
+
+# Cleanup unused networks
+run_cleanup "unused networks" "docker network prune -f"
+
+# Get resource counts after cleanup
 IMAGES_AFTER=$(docker images -q 2>/dev/null | wc -l)
-IMAGES_REMOVED=$((IMAGES_BEFORE - IMAGES_AFTER))
-log_message "Images after cleanup: $IMAGES_AFTER (removed: $IMAGES_REMOVED)"
+CONTAINERS_AFTER=$(docker ps -a -q 2>/dev/null | wc -l)
+VOLUMES_AFTER=$(docker volume ls -q 2>/dev/null | wc -l)
+log_message "Resources after cleanup: Images: $IMAGES_AFTER, Containers: $CONTAINERS_AFTER, Volumes: $VOLUMES_AFTER"
 
 # Get disk usage after cleanup
 DISK_AFTER=$(df -h / | tail -1 | awk '{print $3 " used, " $4 " free"}' 2>/dev/null || echo "unknown")
-log_message "Disk usage after: $DISK_AFTER"
+DISK_FREE_PERCENT_AFTER=$(get_disk_free_percent)
+log_message "Disk usage after: $DISK_AFTER (${DISK_FREE_PERCENT_AFTER}% free)"
 
-# Show current images (limit to first 20 to avoid huge logs)
-log_message "Remaining images (showing first 20):"
-docker images --format "{{.Repository}}:{{.Tag}} ({{.Size}})" 2>/dev/null | head -20 >> "$LOG_FILE" 2>&1
+# Show summary of remaining resources (limit to avoid huge logs)
+log_message "Remaining images (showing first 10):"
+docker images --format "{{.Repository}}:{{.Tag}} ({{.Size}})" 2>/dev/null | head -10 >> "$LOG_FILE" 2>&1
 
-log_message "=== Docker Image Cleanup Completed ==="
+log_message "=== Docker Comprehensive Cleanup Completed ==="
 log_message ""
 

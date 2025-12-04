@@ -68,6 +68,20 @@ The scripts are organized into a modular architecture for maintainability:
 - ✅ **Testable**: Each module can be tested independently
 - ✅ **Backward Compatible**: Existing scripts continue working via `utils.sh` loader
 
+## 🔌 Port Configuration
+
+**Infrastructure Service** (reverse proxy and SSL termination)
+
+| Service | Host Port | Container Port | Description |
+|---------|-----------|----------------|-------------|
+| **Nginx HTTP** | 80 | 80 | HTTP reverse proxy |
+| **Nginx HTTPS** | 443 | 443 | HTTPS reverse proxy with SSL termination |
+
+**Note**: 
+- Ports 80 and 443 are exposed on all interfaces (0.0.0.0) for external access
+- Nginx acts as reverse proxy for all services in the ecosystem
+- SSL certificates managed automatically via Let's Encrypt/Certbot
+
 ## Quick Start
 
 ### 1. Clone and Setup

@@ -39,7 +39,7 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Startup Order**: 3 (can start first among microservices)
 - **Shared Services**: None
 - **Container**: `logging-microservice-blue` / `logging-microservice-green`
-- **Port**: 3268
+- **Port**: 3367
 - **Health Endpoint**: `/health`
 
 #### auth-microservice
