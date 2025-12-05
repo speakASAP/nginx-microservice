@@ -81,14 +81,28 @@ HEALTHY_SERVICES=()
 while IFS= read -r service_key; do
     # Get service configuration
     CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
-    PORT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].port // empty" 2>/dev/null)
     HEALTH_ENDPOINT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_endpoint // empty" 2>/dev/null)
     HEALTH_TIMEOUT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_timeout // 5" 2>/dev/null)
     HEALTH_RETRIES=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].health_retries // 3" 2>/dev/null)
     
-    # Skip if required fields are missing
-    if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ] || [ -z "$PORT" ] || [ "$PORT" = "null" ] || [ -z "$HEALTH_ENDPOINT" ] || [ "$HEALTH_ENDPOINT" = "null" ]; then
-        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Skipping $service_key: missing required configuration"
+    # Skip if container_base is missing
+    if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Skipping $service_key: missing container_name_base"
+        continue
+    fi
+    
+    # Get container port with auto-detection
+    PORT=$(get_container_port "$SERVICE_NAME" "$service_key" "$CONTAINER_BASE" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check")
+    
+    # Skip if port still missing after auto-detection
+    if [ -z "$PORT" ] || [ "$PORT" = "null" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Skipping $service_key: container_port not found in registry and could not be auto-detected"
+        continue
+    fi
+    
+    # Skip if health endpoint is missing
+    if [ -z "$HEALTH_ENDPOINT" ] || [ "$HEALTH_ENDPOINT" = "null" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Skipping $service_key: missing health_endpoint"
         continue
     fi
     

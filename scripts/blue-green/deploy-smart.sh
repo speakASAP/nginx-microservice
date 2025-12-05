@@ -36,9 +36,10 @@ SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo
 if [ -n "$SERVICE_KEYS" ]; then
     while IFS= read -r service_key; do
         CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
-        PORT=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].port // empty" 2>/dev/null)
         
         if [ -n "$CONTAINER_BASE" ] && [ "$CONTAINER_BASE" != "null" ]; then
+            # Get container port with auto-detection
+            PORT=$(get_container_port "$SERVICE_NAME" "$service_key" "$CONTAINER_BASE")
             # Check for blue and green containers
             if type kill_container_if_exists >/dev/null 2>&1; then
                 kill_container_if_exists "${CONTAINER_BASE}-blue" "$SERVICE_NAME" "pre-deploy"

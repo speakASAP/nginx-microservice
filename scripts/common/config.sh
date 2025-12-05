@@ -45,6 +45,168 @@ if [ -f "${SCRIPT_DIR}/state.sh" ]; then
     source "${SCRIPT_DIR}/state.sh"
 fi
 
+# Helper function to get container port with auto-detection
+# Usage: get_container_port <service_name> <service_key> <container_base> [log_service] [log_color] [log_action]
+# Returns: container port (empty string if not found)
+# If log_service, log_color, and log_action are provided, logs auto-detection
+get_container_port() {
+    local service_name="$1"
+    local service_key="$2"
+    local container_base="$3"
+    local log_service="${4:-}"
+    local log_color="${5:-}"
+    local log_action="${6:-}"
+    
+    # Try to get port from registry first
+    local registry=$(load_service_registry "$service_name")
+    local port=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_port // empty" 2>/dev/null)
+    
+    # Auto-detect from docker-compose.yml if not in registry
+    if [ -z "$port" ] || [ "$port" = "null" ]; then
+        if type detect_container_port_from_compose >/dev/null 2>&1; then
+            port=$(detect_container_port_from_compose "$service_name" "$service_key" "$container_base" 2>/dev/null || echo "")
+            # Log auto-detection if logging parameters provided
+            if [ -n "$port" ] && [ "$port" != "null" ] && [ -n "$log_service" ] && [ -n "$log_action" ]; then
+                if type log_message >/dev/null 2>&1; then
+                    log_message "INFO" "$log_service" "$log_color" "$log_action" "Auto-detected container_port=$port for $service_key from docker-compose.yml"
+                elif type print_status >/dev/null 2>&1; then
+                    print_status "Auto-detected container_port=$port for $service_key from docker-compose.yml"
+                fi
+            fi
+        fi
+    fi
+    
+    echo "$port"
+}
+
+# Function to auto-detect container port from docker-compose.yml
+# This makes port optional in registry - system will auto-detect if missing
+detect_container_port_from_compose() {
+    local service_name="$1"
+    local service_key="$2"
+    local container_base="$3"
+    
+    local registry=$(load_service_registry "$service_name")
+    local service_path=$(echo "$registry" | jq -r '.production_path // .service_path // empty' 2>/dev/null)
+    local compose_file=$(echo "$registry" | jq -r '.docker_compose_file // "docker-compose.blue.yml"' 2>/dev/null)
+    
+    if [ -z "$service_path" ] || [ "$service_path" = "null" ]; then
+        return 1
+    fi
+    
+    local compose_path="${service_path}/${compose_file}"
+    if [ ! -f "$compose_path" ]; then
+        return 1
+    fi
+    
+    # Try to get container port from docker-compose.yml
+    # Look for port mapping format: "HOST:CONTAINER" or "CONTAINER"
+    # We want the container port (right side of : or the single port)
+    local container_port=""
+    
+    # Use docker compose config to get normalized output
+    if command -v docker >/dev/null 2>&1; then
+        local compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config 2>/dev/null || echo "")
+        if [ -n "$compose_config" ]; then
+            # Try to extract container port using yq (preferred for YAML parsing)
+            if command -v yq >/dev/null 2>&1; then
+                # yq can handle:
+                # - Short-form string: "8080:3000" → extract 3000 (right side)
+                # - Single port string: "3000" → extract 3000 (the port itself)
+                # - Single port number: 3000 → extract 3000
+                # - Long-form object: {target: 3000} → extract .target
+                # Use bracket notation with quoted key to handle special characters (e.g., "api-gateway")
+                container_port=$(echo "$compose_config" | yq eval ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" - 2>/dev/null | \
+                    grep -oE '^[0-9]+' | head -1 || echo "")
+            elif command -v jq >/dev/null 2>&1; then
+                # jq can parse YAML if available, handle all formats
+                container_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | \
+                    grep -oE '^[0-9]+' | head -1 || echo "")
+            else
+                # Fallback: use grep/sed - handle short-form, single-port, and long-form YAML
+                # Extract service section: from service key line until next service or end of file
+                # Use a more robust approach that handles last service in file
+                # Escape service_key for regex to handle special characters
+                local escaped_service_key=$(printf '%s\n' "$service_key" | sed 's/[[\.*^$()+?{|]/\\&/g')
+                local service_start=$(echo "$compose_config" | grep -n "^  ${escaped_service_key}:" | cut -d: -f1)
+                if [ -n "$service_start" ]; then
+                    # Find next service line after this one, or use end of file
+                    local next_service_line=$(echo "$compose_config" | tail -n +$((service_start + 1)) | grep -n "^  [a-z]" | head -1 | cut -d: -f1)
+                    if [ -n "$next_service_line" ]; then
+                        # Extract section from service start to next service (exclusive)
+                        local service_section=$(echo "$compose_config" | sed -n "${service_start},$((service_start + next_service_line - 1))p")
+                    else
+                        # Last service in file - extract from service start to end
+                        local service_section=$(echo "$compose_config" | sed -n "${service_start},\$p")
+                    fi
+                else
+                    # Fallback: use original method if line number extraction fails
+                    # Use escaped service_key for regex
+                    local service_section=$(echo "$compose_config" | grep -A 100 "^  ${escaped_service_key}:" | grep -B 100 "^  [a-z]" | head -n -1)
+                fi
+                
+                # Try short-form first: "HOST:CONTAINER" (e.g., "8080:3000")
+                if [ -n "$service_section" ]; then
+                    container_port=$(echo "$service_section" | \
+                        grep -E "^\s+-.*:.*:" | head -1 | \
+                        sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\3/' | \
+                        sed -E 's/.*"([0-9]+):([0-9]+)".*/\2/' | \
+                        grep -oE '^[0-9]+' | head -1 || echo "")
+                    
+                    # If short-form didn't work, try single-port format: "3000" or 3000
+                    if [ -z "$container_port" ]; then
+                        container_port=$(echo "$service_section" | \
+                            grep -A 20 "ports:" | \
+                            grep -E "^\s+-.*[0-9]+" | head -1 | \
+                            sed -E 's/.*"([0-9]+)".*/\1/' | \
+                            sed -E 's/.*:\s*([0-9]+).*/\1/' | \
+                            grep -oE '^[0-9]+' | head -1 || echo "")
+                    fi
+                    
+                    # If still not found, try long-form: target: 3000 (indented under ports)
+                    if [ -z "$container_port" ]; then
+                        container_port=$(echo "$service_section" | \
+                            grep -A 20 "ports:" | \
+                            grep -E "^\s+target:\s*[0-9]+" | head -1 | \
+                            sed -E 's/.*target:\s*([0-9]+).*/\1/' | \
+                            grep -oE '^[0-9]+' | head -1 || echo "")
+                    fi
+                fi
+            fi
+        fi
+    fi
+    
+    # Fallback: try to read from .env file in service directory
+    if [ -z "$container_port" ] && [ -f "${service_path}/.env" ]; then
+        # Look for PORT variable or service-specific port variable
+        # Use grep -F (fixed string) so no escaping needed - treats all characters as literals
+        local service_key_upper="${service_key^^}"
+        local container_base_upper="${container_base^^}"
+        local env_port=$(grep -F -e "PORT=" -e "${service_key_upper}_PORT=" -e "${container_base_upper}_PORT=" "${service_path}/.env" 2>/dev/null | \
+            cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        if [ -n "$env_port" ]; then
+            container_port="$env_port"
+        fi
+    fi
+    
+    # Fallback: try to detect from running container
+    if [ -z "$container_port" ]; then
+        local running_container="${container_base}-blue"
+        if docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${running_container}$"; then
+            # Get exposed port from container
+            container_port=$(docker inspect "$running_container" --format='{{range $p, $conf := .NetworkSettings.Ports}}{{$p}}{{end}}' 2>/dev/null | \
+                cut -d'/' -f1 | head -1 || echo "")
+        fi
+    fi
+    
+    if [ -n "$container_port" ] && [ "$container_port" != "null" ]; then
+        echo "$container_port"
+        return 0
+    fi
+    
+    return 1
+}
+
 # Note: validate_and_apply_config and log_message will be available from nginx.sh and utils.sh
 # when these modules are sourced together
 
@@ -76,9 +238,19 @@ generate_upstream_blocks() {
     
     while IFS= read -r service_key; do
         local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base")
-        local service_port=$(echo "$registry" | jq -r ".services[\"$service_key\"].port")
         
-        if [ -z "$container_base" ] || [ "$container_base" = "null" ] || [ -z "$service_port" ] || [ "$service_port" = "null" ]; then
+        if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
+            continue
+        fi
+        
+        # Get container port with auto-detection
+        local service_port=$(get_container_port "$service_name" "$service_key" "$container_base")
+        
+        # Skip if still no port found
+        if [ -z "$service_port" ] || [ "$service_port" = "null" ]; then
+            if type print_warning >/dev/null 2>&1; then
+                print_warning "Port not found for $service_key in $service_name - skipping upstream block"
+            fi
             continue
         fi
         
@@ -238,8 +410,11 @@ generate_proxy_locations() {
     if [ -n "$api_gateway_container" ] && [ "$api_gateway_container" != "null" ]; then
         # If api-gateway exists and we haven't added /api/ yet, add it
         if [ "$has_backend" != "true" ] || [ -z "$(echo "$proxy_locations" | grep "location /api/")" ]; then
-            # Get port for api-gateway
-            local api_gateway_port=$(echo "$registry" | jq -r '.services["api-gateway"].port // "80"')
+            # Get port for api-gateway with auto-detection (default to 80 if not found)
+            local api_gateway_port=$(get_container_port "$service_name" "api-gateway" "$api_gateway_container")
+            if [ -z "$api_gateway_port" ] || [ "$api_gateway_port" = "null" ]; then
+                api_gateway_port="80"
+            fi
             # Use container name with color suffix for runtime DNS resolution
             local api_gateway_container_name="${api_gateway_container}-${active_color}"
             proxy_locations="${proxy_locations}    # API Gateway routes - using variables with resolver for runtime DNS resolution

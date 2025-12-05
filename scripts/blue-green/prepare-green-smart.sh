@@ -177,7 +177,9 @@ while IFS= read -r service; do
     fi
     CONTAINER_NAME="${CONTAINER_BASE}-${PREPARE_COLOR}"
     
-    PORT=$(echo "$REGISTRY" | jq -r ".services.${service}.port // empty" 2>/dev/null || echo "")
+    # Get container port with auto-detection
+    PORT=$(get_container_port "$SERVICE_NAME" "$service" "$CONTAINER_BASE" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
+    
     HEALTH_ENDPOINT=$(echo "$REGISTRY" | jq -r ".services.${service}.health_endpoint // "/health"" 2>/dev/null || echo "/health")
     
     # Check if service needs rebuild
@@ -244,7 +246,9 @@ while IFS= read -r service; do
     CONTAINER_NAME="${CONTAINER_BASE}-${PREPARE_COLOR}"
     
     # Get actual container name from compose config (may be different from expected)
-    ACTUAL_CONTAINER_NAME=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
+    # Escape service name for regex to handle special characters
+    local escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    ACTUAL_CONTAINER_NAME=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${escaped_service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
     
     # If compose config doesn't have container_name, docker-compose will use PROJECT_NAME-SERVICE_NAME format
     if [ -z "$ACTUAL_CONTAINER_NAME" ]; then
@@ -284,15 +288,17 @@ while IFS= read -r service; do
         fi
     fi
     
-    # Check for port conflicts - get host port from docker-compose file
-    PORT=$(echo "$REGISTRY" | jq -r ".services.${service}.port // empty" 2>/dev/null || echo "")
+    # Check for port conflicts - get container port with auto-detection
+    PORT=$(get_container_port "$SERVICE_NAME" "$service" "$CONTAINER_BASE")
     
     # Try to get actual host port from docker-compose file
     host_port=""
     if [ -f "$COMPOSE_FILE" ]; then
         # Extract host port mapping from compose file for this service
+        # Escape service name for regex to handle special characters
+        local escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
         port_mapping=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null | \
-            grep -A 20 "^  ${service}:" | grep -E "^\s+-.*:.*:" | head -1 | \
+            grep -A 20 "^  ${escaped_service}:" | grep -E "^\s+-.*:.*:" | head -1 | \
             sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | \
             sed -E 's/.*"([0-9]+):([0-9]+)".*/\1/' | \
             grep -oE '^[0-9]+' | head -1 || echo "")
@@ -441,12 +447,16 @@ check_health() {
 
 # Check backend health (if exists)
 BACKEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.backend.container_name_base // empty')
-BACKEND_PORT=$(echo "$REGISTRY" | jq -r '.services.backend.port // empty')
 BACKEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.backend.health_endpoint // empty')
 BACKEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.backend.health_timeout // 5')
 BACKEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.backend.health_retries // 3')
 
-if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ] && [ -n "$BACKEND_PORT" ]; then
+# Get backend port with auto-detection
+if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ]; then
+    BACKEND_PORT=$(get_container_port "$SERVICE_NAME" "backend" "$BACKEND_CONTAINER" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
+fi
+
+if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ] && [ -n "$BACKEND_PORT" ] && [ "$BACKEND_PORT" != "null" ]; then
     BACKEND_CONTAINER="${BACKEND_CONTAINER}-${PREPARE_COLOR}"
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking backend health: $BACKEND_CONTAINER:$BACKEND_PORT${BACKEND_HEALTH}"
     
@@ -461,12 +471,16 @@ fi
 
 # Check frontend health (if exists)
 FRONTEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.frontend.container_name_base // empty')
-FRONTEND_PORT=$(echo "$REGISTRY" | jq -r '.services.frontend.port // empty')
 FRONTEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.frontend.health_endpoint // empty')
 FRONTEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.frontend.health_timeout // 5')
 FRONTEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.frontend.health_retries // 3')
 
-if [ -n "$FRONTEND_CONTAINER" ] && [ "$FRONTEND_CONTAINER" != "null" ] && [ -n "$FRONTEND_PORT" ]; then
+# Get frontend port with auto-detection
+if [ -n "$FRONTEND_CONTAINER" ] && [ "$FRONTEND_CONTAINER" != "null" ]; then
+    FRONTEND_PORT=$(get_container_port "$SERVICE_NAME" "frontend" "$FRONTEND_CONTAINER" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
+fi
+
+if [ -n "$FRONTEND_CONTAINER" ] && [ "$FRONTEND_CONTAINER" != "null" ] && [ -n "$FRONTEND_PORT" ] && [ "$FRONTEND_PORT" != "null" ]; then
     FRONTEND_CONTAINER="${FRONTEND_CONTAINER}-${PREPARE_COLOR}"
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking frontend health: $FRONTEND_CONTAINER:$FRONTEND_PORT${FRONTEND_HEALTH}"
     
