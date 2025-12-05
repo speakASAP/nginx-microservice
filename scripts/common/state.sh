@@ -50,6 +50,7 @@ load_state() {
         fi
         # Create initial domain-specific state
         if [ ! -f "$state_file" ]; then
+            mkdir -p "$STATE_DIR"
             echo "{\"service_name\": \"statex\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
         fi
         # Add domain state if it doesn't exist
@@ -72,6 +73,8 @@ load_state() {
     # Standard state loading for non-statex services or when domain not specified
     if [ ! -f "$state_file" ]; then
         print_warning "State file not found: $state_file. Creating initial state."
+        # Ensure state directory exists
+        mkdir -p "$STATE_DIR"
         # Create initial state with blue as active
         cat > "$state_file" <<EOF
 {
