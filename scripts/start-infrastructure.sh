@@ -46,32 +46,66 @@ start_database_server() {
     fi
     
     if [ $postgres_code -eq 0 ] && [ $redis_code -eq 0 ]; then
-        print_success "database-server is ${GREEN_CHECK} already running"
-        print_detail "Container status:"
-        docker ps --filter "name=db-server" --format "  - {{.Names}}: {{.Status}}" 2>&1 || true
+        # Double-check that containers actually exist before doing health checks
+        if ! docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^db-server-postgres$"; then
+            print_warning "db-server-postgres container not found, will start it"
+            postgres_code=1
+        fi
+        if ! docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^db-server-redis$"; then
+            print_warning "db-server-redis container not found, will start it"
+            redis_code=1
+        fi
         
-        # Verify health checks
-        print_status "Verifying database health checks..."
-        if ! wait_for_postgres; then
-            print_error "PostgreSQL health check failed"
-            exit 1
+        # If both containers actually exist and are running, verify health
+        if [ $postgres_code -eq 0 ] && [ $redis_code -eq 0 ]; then
+            print_success "database-server is ${GREEN_CHECK} already running"
+            print_detail "Container status:"
+            docker ps --filter "name=db-server" --format "  - {{.Names}}: {{.Status}}" 2>&1 || true
+            
+            # Verify health checks
+            print_status "Verifying database health checks..."
+            if ! wait_for_postgres; then
+                print_error "PostgreSQL health check failed"
+                exit 1
+            fi
+            if ! wait_for_redis; then
+                print_error "Redis health check failed"
+                exit 1
+            fi
+            return 0
         fi
-        if ! wait_for_redis; then
-            print_error "Redis health check failed"
-            exit 1
-        fi
-        return 0
     fi
     
     # Check if database-server directory exists
-    local db_server_path="${DATABASE_SERVER_PATH:-/home/statex/database-server}"
+    # First try relative path from nginx-microservice (../database-server)
+    local db_server_path="${DATABASE_SERVER_PATH:-}"
+    if [ -z "$db_server_path" ]; then
+        # Try relative path first (sibling directory)
+        if [ -d "${NGINX_PROJECT_DIR}/../database-server" ]; then
+            db_server_path="${NGINX_PROJECT_DIR}/../database-server"
+        else
+            # Fall back to absolute path
+            db_server_path="/home/statex/database-server"
+        fi
+    fi
+    
     if [ ! -d "$db_server_path" ]; then
         print_error "database-server directory not found: $db_server_path"
+        print_error "Checked paths:"
+        print_error "  - ${NGINX_PROJECT_DIR}/../database-server"
+        print_error "  - /home/statex/database-server"
+        print_error "  - DATABASE_SERVER_PATH environment variable"
         exit 1
     fi
     
     cd "$db_server_path"
     print_detail "Working directory: $(pwd)"
+    
+    # Verify docker-compose.yml exists
+    if [ ! -f "docker-compose.yml" ]; then
+        print_error "docker-compose.yml not found in database-server directory: $db_server_path"
+        exit 1
+    fi
     
     # Check and kill processes using database ports before starting
     print_status "Checking for port conflicts on database ports..."
