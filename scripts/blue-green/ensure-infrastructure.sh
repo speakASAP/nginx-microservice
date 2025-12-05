@@ -5,7 +5,18 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/utils.sh"
+
+# Source utils.sh - try current directory first, then blue-green directory
+if [ -f "${SCRIPT_DIR}/utils.sh" ]; then
+    source "${SCRIPT_DIR}/utils.sh"
+elif [ -f "${SCRIPT_DIR}/../blue-green/utils.sh" ]; then
+    source "${SCRIPT_DIR}/../blue-green/utils.sh"
+elif [ -f "${SCRIPT_DIR}/blue-green/utils.sh" ]; then
+    source "${SCRIPT_DIR}/blue-green/utils.sh"
+else
+    echo "Error: utils.sh not found. Expected location: ${SCRIPT_DIR}/utils.sh" >&2
+    exit 1
+fi
 
 SERVICE_NAME="$1"
 
