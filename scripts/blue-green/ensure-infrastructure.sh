@@ -72,9 +72,17 @@ if [ "$USE_SHARED_DB" = "true" ]; then
         log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Shared infrastructure is available and running"
         exit 0
     else
-        print_error "Shared database-server is required but not running"
-        print_error "Please start database-server: cd $(cd "$SCRIPT_DIR/../.." && pwd) && docker compose -f docker-compose.db-server.yml up -d"
-        exit 1
+        log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Shared database-server is required but not running"
+        log_message "INFO" "$SERVICE_NAME" "infrastructure" "start" "Starting database-server..."
+        
+        # Start database-server using the dedicated script
+        if bash "${SCRIPT_DIR}/start-database-server.sh"; then
+            log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "start" "database-server started successfully"
+            exit 0
+        else
+            log_message "ERROR" "$SERVICE_NAME" "infrastructure" "start" "Failed to start database-server"
+            exit 1
+        fi
     fi
 fi
 
