@@ -432,16 +432,48 @@ check_health() {
     local attempt=0
     local network_name="${NETWORK_NAME:-nginx-network}"
     local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
+    
+    # Verify container is running
+    if ! docker ps --format "{{.Names}}" | grep -q "^${container_name}$"; then
+        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is not running"
+        return 1
+    fi
+    
+    # Verify container is on the network
+    if ! docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is not on network ${network_name}"
+        # Try to connect container to network
+        if docker network connect "${network_name}" "${container_name}" 2>/dev/null; then
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Connected $container_name to ${network_name}"
+            sleep 1
+        else
+            log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to connect $container_name to ${network_name}"
+            return 1
+        fi
+    fi
+    
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
+        
+        # Try network-based health check first
         if docker run --rm --network "${network_name}" "${health_check_image}" \
             curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" >/dev/null 2>&1; then
             return 0
         fi
+        
+        # Fallback: try direct exec if network check fails
+        if docker exec "${container_name}" curl -s -f --max-time "$timeout" "http://localhost:${port}${endpoint}" >/dev/null 2>&1; then
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check passed via direct exec (network check may have failed)"
+            return 0
+        fi
+        
         if [ $attempt -lt $retries ]; then
             sleep 1
         fi
     done
+    
+    # Log diagnostic information on final failure
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check failed. Container status: $(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo 'unknown')"
     return 1
 }
 
