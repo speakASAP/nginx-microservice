@@ -455,16 +455,43 @@ check_health() {
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
         
+        # Check if port is listening inside container
+        # Use strict port matching to avoid partial matches (e.g., :80 matching :8000)
+        # Pattern :${port}([^0-9]|$) matches :port followed by non-digit or end of line
+        if ! docker exec "${container_name}" sh -c "nc -z localhost ${port} 2>/dev/null || ss -tuln 2>/dev/null | grep -qE ':${port}([^0-9]|$)' || netstat -tuln 2>/dev/null | grep -qE ':${port}([^0-9]|$)'" 2>/dev/null; then
+            if [ $attempt -eq $retries ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Port ${port} is not listening in container ${container_name}"
+            fi
+        fi
+        
         # Try network-based health check first
-        if docker run --rm --network "${network_name}" "${health_check_image}" \
-            curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" >/dev/null 2>&1; then
+        local network_error=""
+        if network_error=$(docker run --rm --network "${network_name}" "${health_check_image}" \
+            curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" 2>&1); then
             return 0
         fi
         
         # Fallback: try direct exec if network check fails
-        if docker exec "${container_name}" curl -s -f --max-time "$timeout" "http://localhost:${port}${endpoint}" >/dev/null 2>&1; then
-            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check passed via direct exec (network check may have failed)"
-            return 0
+        # First check if curl is available in container
+        if docker exec "${container_name}" sh -c "command -v curl >/dev/null 2>&1" 2>/dev/null; then
+            local exec_error=""
+            if exec_error=$(docker exec "${container_name}" curl -s -f --max-time "$timeout" "http://localhost:${port}${endpoint}" 2>&1); then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check passed via direct exec (network check may have failed)"
+                return 0
+            elif [ $attempt -eq $retries ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Direct exec curl failed: ${exec_error}"
+            fi
+        else
+            # Try using wget if curl is not available
+            if docker exec "${container_name}" sh -c "command -v wget >/dev/null 2>&1" 2>/dev/null; then
+                local wget_error=""
+                if wget_error=$(docker exec "${container_name}" wget -q --spider --timeout="$timeout" "http://localhost:${port}${endpoint}" 2>&1); then
+                    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check passed via direct exec with wget"
+                    return 0
+                elif [ $attempt -eq $retries ]; then
+                    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Direct exec wget failed: ${wget_error}"
+                fi
+            fi
         fi
         
         if [ $attempt -lt $retries ]; then
@@ -472,8 +499,38 @@ check_health() {
         fi
     done
     
-    # Log diagnostic information on final failure
-    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check failed. Container status: $(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo 'unknown')"
+    # Log comprehensive diagnostic information on final failure
+    local container_status=$(docker inspect --format='{{.State.Status}}' "$container_name" 2>/dev/null || echo 'unknown')
+    local container_health=$(docker inspect --format='{{.State.Health.Status}}' "$container_name" 2>/dev/null || echo 'none')
+    
+    # Get listening ports - check docker exec exit code, not head's exit code
+    local listening_ports=""
+    local docker_exec_output=""
+    local docker_exec_exit_code=0
+    
+    # Run docker exec and capture both output and exit code separately
+    docker_exec_output=$(docker exec "${container_name}" sh -c "ss -tuln 2>/dev/null | grep LISTEN || netstat -tuln 2>/dev/null | grep LISTEN || echo ''" 2>/dev/null)
+    docker_exec_exit_code=$?
+    
+    if [ $docker_exec_exit_code -eq 0 ]; then
+        # docker exec succeeded - pipe output to head and check if result is empty
+        listening_ports=$(echo "$docker_exec_output" | head -5 2>/dev/null)
+        # Trim whitespace/newlines before checking if empty (echo '' outputs a newline)
+        # This handles the case where ss/netstat fail and fallback to echo ''
+        local listening_ports_trimmed=$(echo "$listening_ports" | tr -d "[:space:]")
+        if [ -z "$listening_ports_trimmed" ]; then
+            listening_ports="unknown"
+        fi
+    else
+        # docker exec failed (container not running, crashed, etc.)
+        listening_ports="unknown"
+    fi
+    
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Health check failed after $retries attempts"
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container: $container_name, Status: $container_status, Health: $container_health"
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Expected: http://${container_name}:${port}${endpoint}"
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Listening ports in container: ${listening_ports}"
+    
     return 1
 }
 
