@@ -274,9 +274,13 @@ generate_upstream_blocks() {
         local blue_container="${container_base}-blue"
         local green_container="${container_base}-green"
         
+        # Use unique upstream name per color to avoid conflicts when both blue and green configs are loaded
+        # Upstream name format: container_base-color (e.g., logging-microservice-blue)
+        local upstream_name="${container_base}-${active_color}"
+        
         # Use zone for shared memory when using resolve directive (required for runtime DNS resolution)
-        upstream_blocks="${upstream_blocks}upstream ${container_base} {
-    zone ${container_base}_zone 64k;
+        upstream_blocks="${upstream_blocks}upstream ${upstream_name} {
+    zone ${upstream_name}_zone 64k;
 "
 
         # Always include blue server with resolve directive (nginx will resolve at runtime via resolver)
