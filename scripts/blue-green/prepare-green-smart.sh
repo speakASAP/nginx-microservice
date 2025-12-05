@@ -247,7 +247,7 @@ while IFS= read -r service; do
     
     # Get actual container name from compose config (may be different from expected)
     # Escape service name for regex to handle special characters
-    local escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
     ACTUAL_CONTAINER_NAME=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${escaped_service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
     
     # If compose config doesn't have container_name, docker-compose will use PROJECT_NAME-SERVICE_NAME format
@@ -296,7 +296,7 @@ while IFS= read -r service; do
     if [ -f "$COMPOSE_FILE" ]; then
         # Extract host port mapping from compose file for this service
         # Escape service name for regex to handle special characters
-        local escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
+        escaped_service=$(printf '%s\n' "$service" | sed 's/[[\.*^$()+?{|]/\\&/g')
         port_mapping=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null | \
             grep -A 20 "^  ${escaped_service}:" | grep -E "^\s+-.*:.*:" | head -1 | \
             sed -E 's/.*"([0-9.]+):([0-9]+):([0-9]+)".*/\1:\2/' | \
