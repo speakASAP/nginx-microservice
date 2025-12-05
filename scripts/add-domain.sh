@@ -204,8 +204,9 @@ fi
 # Verify container accessibility
 echo ""
 echo "Verifying container accessibility..."
-if docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
-    if docker run --rm --network "${NETWORK_NAME}" alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${CONTAINER_NAME}:${PORT}" >/dev/null 2>&1; then
+    local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
+    if docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
+        if docker run --rm --network "${NETWORK_NAME}" "${health_check_image}" curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${CONTAINER_NAME}:${PORT}" >/dev/null 2>&1; then
         echo "✅ Container ${CONTAINER_NAME}:${PORT} is accessible"
     else
         echo "⚠️  Warning: Could not verify container ${CONTAINER_NAME}:${PORT} accessibility"

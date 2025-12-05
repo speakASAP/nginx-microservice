@@ -9,6 +9,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REGISTRY_DIR="${PROJECT_DIR}/service-registry"
 
+# Load .env file if it exists
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -224,7 +231,7 @@ echo "     - crypto-ai-backend-*: nginx-network"
 echo "     - crypto-ai-frontend-*: nginx-network"
 echo ""
 print_info "To check docker-compose files in crypto-ai-agent repository:"
-echo "  cd /home/statex/crypto-ai-agent"
+echo "  cd ${PRODUCTION_BASE_PATH:-/home/statex}/crypto-ai-agent"
 echo "  grep -r 'DB_HOST\|POSTGRES_HOST\|DATABASE_URL' docker-compose*.yml"
 echo "  grep -r 'REDIS_HOST\|REDIS_URL' docker-compose*.yml"
 

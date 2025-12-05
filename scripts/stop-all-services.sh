@@ -9,6 +9,13 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REGISTRY_DIR="${NGINX_PROJECT_DIR}/service-registry"
 
+# Load .env file if it exists
+if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -223,12 +230,13 @@ stop_nginx_microservice() {
 stop_database_server() {
     print_status "Stopping database-server..."
     
-    if [ ! -d "/home/statex/database-server" ]; then
-        print_warning "database-server directory not found: /home/statex/database-server"
+    local db_server_path="${DATABASE_SERVER_PATH:-/home/statex/database-server}"
+    if [ ! -d "$db_server_path" ]; then
+        print_warning "database-server directory not found: $db_server_path"
         return 0
     fi
     
-    cd /home/statex/database-server
+    cd "$db_server_path"
     print_detail "Working directory: $(pwd)"
     
     if docker compose down 2>&1; then

@@ -6,6 +6,14 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Load .env file if it exists
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
 CONFIG_DIR="${PROJECT_DIR}/nginx/conf.d"
 CERT_DIR="${PROJECT_DIR}/certificates"
 
@@ -65,8 +73,9 @@ check_container() {
     fi
     
     local network_name="${NETWORK_NAME:-nginx-network}"
+    local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
     if docker network inspect "${network_name}" >/dev/null 2>&1; then
-        if docker run --rm --network "${network_name}" alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://${container}:${port}" >/dev/null 2>&1; then
+        if docker run --rm --network "${network_name}" "${health_check_image}" curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://${container}:${port}" >/dev/null 2>&1; then
             echo "✅ Online"
         else
             echo "❌ Offline"

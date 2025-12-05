@@ -50,10 +50,11 @@ check_health() {
     fi
     
     local network_name="${NETWORK_NAME:-nginx-network}"
+    local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
     local attempt=0
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
-        if docker run --rm --network "${network_name}" alpine/curl:latest \
+        if docker run --rm --network "${network_name}" "${health_check_image}" \
             curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" >/dev/null 2>&1; then
             return 0
         fi

@@ -25,7 +25,7 @@ services:
       retries: 3
 
   certbot:
-    image: certbot/certbot:latest
+    image: ${CERTBOT_IMAGE:-certbot/certbot:latest}
     container_name: nginx-certbot
     restart: unless-stopped
     volumes:

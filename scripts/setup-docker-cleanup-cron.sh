@@ -5,8 +5,17 @@
 
 set -e
 
+# Load .env file if it exists (for PRODUCTION_BASE_PATH)
+SCRIPT_DIR_SCRIPT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR_SCRIPT/.." && pwd)"
+if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
 # Use user's home directory for script location
-USER_HOME="${HOME:-/home/statex}"
+USER_HOME="${HOME:-${PRODUCTION_BASE_PATH:-/home/statex}}"
 SCRIPT_DIR="${USER_HOME}/bin"
 SCRIPT_PATH="${SCRIPT_DIR}/docker-cleanup-images.sh"
 CRON_SCHEDULE="0 */4 * * *"

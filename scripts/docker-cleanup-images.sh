@@ -6,8 +6,17 @@
 # Set PATH for cron environment (Docker might not be in default PATH)
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
+# Load .env file if it exists (for PRODUCTION_BASE_PATH)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
 # Log file location (in user's home directory)
-USER_HOME="${HOME:-/home/statex}"
+USER_HOME="${HOME:-${PRODUCTION_BASE_PATH:-/home/statex}}"
 LOG_FILE="${USER_HOME}/docker-cleanup.log"
 
 # Function to log messages
