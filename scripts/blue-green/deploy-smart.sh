@@ -4,8 +4,12 @@
 
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Save the script's directory before sourcing utils.sh (which may overwrite SCRIPT_DIR)
+DEPLOY_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$DEPLOY_SCRIPT_DIR"
 source "${SCRIPT_DIR}/utils.sh"
+# Restore SCRIPT_DIR after sourcing utils.sh (in case it was overwritten)
+SCRIPT_DIR="$DEPLOY_SCRIPT_DIR"
 
 SERVICE_NAME="$1"
 
