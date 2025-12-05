@@ -54,7 +54,7 @@ pre_validate_config() {
     
     # Check for empty upstream blocks
     # Nginx requires at least one server in each upstream block
-    if grep -qE "^upstream\s+\S+\s*\{$" "$config_file"; then
+    if grep -qE "^upstream[[:space:]]+[^[:space:]]+[[:space:]]*\{$" "$config_file"; then
         local in_upstream=false
         local upstream_name=""
         local has_server=false
@@ -62,12 +62,12 @@ pre_validate_config() {
         
         while IFS= read -r line; do
             # Detect upstream block start
-            if echo "$line" | grep -qE "^upstream\s+\S+\s*\{$"; then
+            if echo "$line" | grep -qE "^upstream[[:space:]]+[^[:space:]]+[[:space:]]*\{$"; then
                 if [ "$in_upstream" = "true" ] && [ "$has_server" = "false" ]; then
                     # Previous upstream was empty
                     empty_upstreams="${empty_upstreams}${upstream_name}\n"
                 fi
-                upstream_name=$(echo "$line" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/')
+                upstream_name=$(echo "$line" | sed -E 's/^upstream[[:space:]]+([^[:space:]]+)[[:space:]]*\{$/\1/')
                 in_upstream=true
                 has_server=false
                 continue
@@ -162,7 +162,7 @@ check_config_compatibility() {
     fi
     
     # Extract upstream names from staging config
-    local staging_upstreams=$(grep -E "^upstream\s+\S+\s*\{$" "$staging_config" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/' || echo "")
+    local staging_upstreams=$(grep -E "^upstream[[:space:]]+[^[:space:]]+[[:space:]]*\{$" "$staging_config" | sed -E 's/^upstream[[:space:]]+([^[:space:]]+)[[:space:]]*\{$/\1/' || echo "")
     
     if [ -z "$staging_upstreams" ]; then
         # No upstreams in staging config - nothing to check
@@ -173,7 +173,7 @@ check_config_compatibility() {
     if [ -d "$blue_green_dir" ]; then
         for existing_config in "$blue_green_dir"/*.conf; do
             if [ -f "$existing_config" ]; then
-                local existing_upstreams=$(grep -E "^upstream\s+\S+\s*\{$" "$existing_config" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/' || echo "")
+                local existing_upstreams=$(grep -E "^upstream[[:space:]]+[^[:space:]]+[[:space:]]*\{$" "$existing_config" | sed -E 's/^upstream[[:space:]]+([^[:space:]]+)[[:space:]]*\{$/\1/' || echo "")
                 
                 for staging_upstream in $staging_upstreams; do
                     for existing_upstream in $existing_upstreams; do

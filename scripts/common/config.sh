@@ -625,8 +625,8 @@ cleanup_upstreams() {
     
     while IFS= read -r line; do
         # Detect upstream block start
-        if echo "$line" | grep -qE "^upstream\s+\S+\s*\{$"; then
-            upstream_name=$(echo "$line" | sed -E 's/^upstream\s+(\S+)\s*\{$/\1/')
+        if echo "$line" | grep -qE "^upstream[[:space:]]+[^[:space:]]+[[:space:]]*\{$"; then
+            upstream_name=$(echo "$line" | sed -E 's/^upstream[[:space:]]+([^[:space:]]+)[[:space:]]*\{$/\1/')
             in_upstream=true
             echo "$line" >> "$temp_config"
             continue
