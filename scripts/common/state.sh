@@ -40,11 +40,14 @@ load_state() {
             # Check if domain-specific state exists
             local domain_state=$(jq -r ".domains[\"$domain\"] // empty" "$state_file" 2>/dev/null)
             if [ -n "$domain_state" ] && [ "$domain_state" != "null" ]; then
-                # Return domain-specific state with service_name
-                jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null || {
-                    # Fallback: create domain state structure
-                    echo "{\"service_name\": \"statex\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
-                }
+                # Return domain-specific state with service_name (with error handling)
+                local domain_state_output=$(jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null)
+                if [ -z "$domain_state_output" ] || ! echo "$domain_state_output" | jq . >/dev/null 2>&1; then
+                    # Fallback: create domain state structure (matches initial state semantics)
+                    echo "{\"service_name\": \"statex\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"running\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
+                else
+                    echo "$domain_state_output"
+                fi
                 return
             fi
         fi
@@ -59,20 +62,26 @@ load_state() {
         if [ -z "$domain_state" ] || [ "$domain_state" = "null" ]; then
             current_state=$(echo "$current_state" | jq --arg domain "$domain" '.domains[$domain] = {
                 "active_color": "blue",
-                "blue": {"status": "stopped", "deployed_at": null, "version": null},
+                "blue": {"status": "running", "deployed_at": null, "version": null},
                 "green": {"status": "stopped", "deployed_at": null, "version": null},
                 "last_deployment": {"color": "blue", "timestamp": null, "success": true}
             }' 2>/dev/null)
             echo "$current_state" | jq '.' > "$state_file" 2>/dev/null || true
         fi
-        # Return domain-specific state
-        jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null
+        # Return domain-specific state (with error handling)
+        local domain_state_output=$(jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null)
+        if [ -z "$domain_state_output" ] || ! echo "$domain_state_output" | jq . >/dev/null 2>&1; then
+            # Return default domain state if jq failed or returned invalid JSON (matches initial state semantics)
+            echo "{\"service_name\": \"statex\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"running\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
+        else
+            echo "$domain_state_output"
+        fi
         return
     fi
     
     # Standard state loading for non-statex services or when domain not specified
     if [ ! -f "$state_file" ]; then
-        print_warning "State file not found: $state_file. Creating initial state."
+        print_warning "State file not found: $state_file. Creating initial state." >&2
         # Ensure state directory exists
         mkdir -p "$STATE_DIR"
         # Create initial state with blue as active
@@ -100,7 +109,14 @@ EOF
     fi
     
     if command -v jq >/dev/null 2>&1; then
-        cat "$state_file"
+        # Validate and return state file, or return default state if file is invalid
+        local state_content=$(cat "$state_file" 2>/dev/null || echo "")
+        if [ -z "$state_content" ] || ! echo "$state_content" | jq . >/dev/null 2>&1; then
+            # File is empty or invalid JSON, return default state (matches initial state semantics)
+            echo "{\"service_name\": \"$service_name\", \"active_color\": \"blue\", \"blue\": {\"status\": \"running\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
+        else
+            echo "$state_content"
+        fi
     else
         print_error "jq not found. Install jq: brew install jq"
         exit 1
