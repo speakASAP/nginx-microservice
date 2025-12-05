@@ -65,12 +65,12 @@ get_container_port() {
     if [ -z "$port" ] || [ "$port" = "null" ]; then
         if type detect_container_port_from_compose >/dev/null 2>&1; then
             port=$(detect_container_port_from_compose "$service_name" "$service_key" "$container_base" 2>/dev/null || echo "")
-            # Log auto-detection if logging parameters provided
+            # Log auto-detection if logging parameters provided (redirect to stderr to avoid contaminating stdout)
             if [ -n "$port" ] && [ "$port" != "null" ] && [ -n "$log_service" ] && [ -n "$log_action" ]; then
                 if type log_message >/dev/null 2>&1; then
-                    log_message "INFO" "$log_service" "$log_color" "$log_action" "Auto-detected container_port=$port for $service_key from docker-compose.yml"
+                    log_message "INFO" "$log_service" "$log_color" "$log_action" "Auto-detected container_port=$port for $service_key from docker-compose.yml" >&2
                 elif type print_status >/dev/null 2>&1; then
-                    print_status "Auto-detected container_port=$port for $service_key from docker-compose.yml"
+                    print_status "Auto-detected container_port=$port for $service_key from docker-compose.yml" >&2
                 fi
             fi
         fi
