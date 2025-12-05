@@ -64,8 +64,9 @@ check_container() {
         return
     fi
     
-    if docker network inspect nginx-network >/dev/null 2>&1; then
-        if docker run --rm --network nginx-network alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://${container}:${port}" >/dev/null 2>&1; then
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    if docker network inspect "${network_name}" >/dev/null 2>&1; then
+        if docker run --rm --network "${network_name}" alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://${container}:${port}" >/dev/null 2>&1; then
             echo "✅ Online"
         else
             echo "❌ Offline"

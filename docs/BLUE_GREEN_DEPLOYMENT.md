@@ -120,17 +120,26 @@ Each service defines its configuration in `service-registry/{service}.json`:
   "services": {
     "backend": {
       "container_name_base": "crypto-ai-backend",
-      "port": 3102,
+      "port": 3102,  // Container port - must match container port in docker-compose.yml (from .env: API_PORT, default: 3102)
       "health_endpoint": "/api/health"
     },
     "frontend": {
       "container_name_base": "crypto-ai-frontend",
-      "port": 3100,
+      "port": 3100,  // Container port - must match container port in docker-compose.yml (from .env: FRONTEND_PORT, default: 3100)
       "health_endpoint": "/"
     }
   }
 }
 ```
+
+**⚠️ IMPORTANT - Port Synchronization**:
+
+- **Port values in service registry files are container ports** (not host ports)
+- **Ports must match the container ports** configured in each service's `docker-compose.yml` and `.env` files
+- **When ports change**: Update both the service's `.env` file AND the corresponding `service-registry/{service}.json` file
+- **After updating ports**: Regenerate nginx configs by running: `./scripts/blue-green/deploy.sh {service-name}`
+- **Service registry files use hardcoded port values** because JSON doesn't support environment variable substitution
+- **Nginx configs are auto-generated** from service registry files, so they will automatically use the updated ports after regeneration
 
 The deployment scripts use this registry to:
 

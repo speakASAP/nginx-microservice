@@ -6,6 +6,20 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# Load .env file if it exists
+load_env_file() {
+    local env_file="${NGINX_PROJECT_DIR}/.env"
+    if [ -f "$env_file" ]; then
+        # Export variables from .env file (ignoring comments and empty lines)
+        set -a
+        source "$env_file" 2>/dev/null || true
+        set +a
+    fi
+}
+
+# Auto-load .env when this script is sourced
+load_env_file
+
 # Source dependencies
 if [ -f "${SCRIPT_DIR}/output.sh" ]; then
     source "${SCRIPT_DIR}/output.sh"

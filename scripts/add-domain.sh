@@ -10,6 +10,16 @@ CONFIG_DIR="${PROJECT_DIR}/nginx/conf.d"
 TEMPLATE_FILE="${PROJECT_DIR}/nginx/templates/domain.conf.template"
 BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 
+# Load environment variables from .env
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
+# Set defaults if not in .env
+NETWORK_NAME="${NETWORK_NAME:-nginx-network}"
+
 # Source blue/green utilities for validation and safe reload
 if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
     # shellcheck disable=SC1090
@@ -32,7 +42,7 @@ if [ -z "$DOMAIN" ] || [ -z "$CONTAINER_NAME" ]; then
     echo ""
     echo "Example:"
     echo "  add-domain.sh example.com my-app 3000"
-    echo "  add-domain.sh subdomain.example.com my-app 8080 admin@example.com"
+    echo "  add-domain.sh subdomain.example.com my-app 3602 admin@example.com"
     exit 1
 fi
 
@@ -194,23 +204,23 @@ fi
 # Verify container accessibility
 echo ""
 echo "Verifying container accessibility..."
-if docker network inspect nginx-network >/dev/null 2>&1; then
-    if docker run --rm --network nginx-network alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${CONTAINER_NAME}:${PORT}" >/dev/null 2>&1; then
+if docker network inspect "${NETWORK_NAME}" >/dev/null 2>&1; then
+    if docker run --rm --network "${NETWORK_NAME}" alpine/curl:latest curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://${CONTAINER_NAME}:${PORT}" >/dev/null 2>&1; then
         echo "✅ Container ${CONTAINER_NAME}:${PORT} is accessible"
     else
         echo "⚠️  Warning: Could not verify container ${CONTAINER_NAME}:${PORT} accessibility"
-        echo "   Make sure the container is running and on the nginx-network"
+        echo "   Make sure the container is running and on the ${NETWORK_NAME}"
     fi
 else
-    echo "⚠️  Warning: nginx-network not found. Create it with:"
-    echo "   docker network create nginx-network"
+    echo "⚠️  Warning: ${NETWORK_NAME} not found. Create it with:"
+    echo "   docker network create ${NETWORK_NAME}"
 fi
 
 echo ""
 echo "✅ Domain $DOMAIN added successfully!"
 echo ""
 echo "Next steps:"
-echo "  1. Ensure your container '${CONTAINER_NAME}' is running and connected to nginx-network"
+echo "  1. Ensure your container '${CONTAINER_NAME}' is running and connected to ${NETWORK_NAME}"
 echo "  2. Test the domain: curl -I https://${DOMAIN}"
 echo "  3. View logs: docker compose logs nginx"
 

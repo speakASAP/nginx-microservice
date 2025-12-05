@@ -128,7 +128,7 @@ docker compose up -d
 ./scripts/add-domain.sh example.com my-app
 
 # With custom port
-./scripts/add-domain.sh example.com my-app 8080
+./scripts/add-domain.sh example.com my-app 3602
 
 # With custom email
 ./scripts/add-domain.sh example.com my-app 3000 admin@example.com
@@ -282,7 +282,6 @@ Edit `.env` file:
 CERTBOT_EMAIL=admin@statex.cz    # Email for Let's Encrypt
 CERTBOT_STAGING=false            # Use staging environment (for testing)
 NETWORK_NAME=nginx-network       # Docker network name
-LOG_LEVEL=info                   # Logging level
 ```
 
 ### Domain Configuration

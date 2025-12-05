@@ -49,28 +49,31 @@ check_502_errors() {
     
     print_section "2. 502 Error Check"
     
-    # Check if nginx-network exists
-    if ! docker network inspect nginx-network >/dev/null 2>&1; then
-        print_error "nginx-network does not exist"
-        print_info "Create it with: docker network create nginx-network"
+    # Load .env if not already loaded (config.sh should load it, but ensure it's available)
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    
+    # Check if network exists
+    if ! docker network inspect "${network_name}" >/dev/null 2>&1; then
+        print_error "${network_name} does not exist"
+        print_info "Create it with: docker network create ${network_name}"
         return 1
     fi
     
-    print_success "nginx-network exists"
+    print_success "${network_name} exists"
     
-    # Check if container is on nginx-network
-    local on_network=$(docker network inspect nginx-network --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -o "$container" || echo "")
+    # Check if container is on network
+    local on_network=$(docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -o "$container" || echo "")
     
     if [ -z "$on_network" ]; then
-        print_error "Container $container is not on nginx-network"
-        print_info "Connect with: docker network connect nginx-network $container"
+        print_error "Container $container is not on ${network_name}"
+        print_info "Connect with: docker network connect ${network_name} $container"
         
         # Show containers that are on the network
-        print_info "Containers on nginx-network:"
-        docker network inspect nginx-network --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sed 's/^/  - /' || true
+        print_info "Containers on ${network_name}:"
+        docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | sed 's/^/  - /' || true
         return 1
     else
-        print_success "Container is on nginx-network"
+        print_success "Container is on ${network_name}"
     fi
     
     # Check if container is responding (generic health check)
@@ -132,10 +135,11 @@ check_network_connectivity() {
         return 1
     fi
     
-    if echo "$networks" | grep -q "nginx-network"; then
-        print_success "Container is on nginx-network"
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    if echo "$networks" | grep -q "${network_name}"; then
+        print_success "Container is on ${network_name}"
     else
-        print_warning "Container is not on nginx-network"
+        print_warning "Container is not on ${network_name}"
     fi
     
     print_info "Networks: $networks"

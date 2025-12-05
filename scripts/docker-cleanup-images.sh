@@ -6,8 +6,9 @@
 # Set PATH for cron environment (Docker might not be in default PATH)
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-# Log file location
-LOG_FILE="/home/statex/docker-cleanup.log"
+# Log file location (in user's home directory)
+USER_HOME="${HOME:-/home/statex}"
+LOG_FILE="${USER_HOME}/docker-cleanup.log"
 
 # Function to log messages
 log_message() {
@@ -16,9 +17,14 @@ log_message() {
     echo "[$timestamp] $message" >> "$LOG_FILE" 2>&1
 }
 
-# Function to check disk space and return percentage free
-get_disk_free_percent() {
+# Function to check disk space and return percentage used
+get_disk_used_percent() {
     df / | tail -1 | awk '{print $5}' | sed 's/%//'
+}
+
+# Function to get reclaimable space from docker system df
+get_reclaimable_space() {
+    docker system df --format "{{.Reclaimable}}" 2>/dev/null | head -1 || echo "0B"
 }
 
 # Function to run cleanup command and log results
@@ -30,11 +36,14 @@ run_cleanup() {
     local exit_code=$?
     if [ $exit_code -eq 0 ]; then
         log_message "✓ $cleanup_type cleanup completed"
-        echo "$output" >> "$LOG_FILE" 2>&1
-        # Extract reclaimed space if available
-        local reclaimed=$(echo "$output" | grep -i "reclaimed" || echo "")
+        # Extract reclaimed space from output (look for "Total reclaimed space" or similar)
+        local reclaimed=$(echo "$output" | grep -iE "(Total reclaimed|reclaimed space)" | head -1 || echo "")
         if [ -n "$reclaimed" ]; then
             log_message "$reclaimed"
+        fi
+        # For build cache, show the detailed output
+        if [ "$cleanup_type" = "build cache" ]; then
+            echo "$output" >> "$LOG_FILE" 2>&1
         fi
     else
         log_message "✗ $cleanup_type cleanup failed (exit code: $exit_code)"
@@ -43,16 +52,22 @@ run_cleanup() {
     return $exit_code
 }
 
-# Ensure log file is writable (fix permissions if needed)
-touch "$LOG_FILE" 2>/dev/null || {
-    LOG_FILE="/var/log/docker-cleanup.log"
-    touch "$LOG_FILE" 2>/dev/null || {
-        logger -t docker-cleanup "ERROR: Cannot write to log file"
+# Ensure log file is writable (in user's home directory, no root needed)
+if ! touch "$LOG_FILE" 2>/dev/null; then
+    # Try to create log directory if it doesn't exist
+    LOG_DIR=$(dirname "$LOG_FILE")
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    if ! touch "$LOG_FILE" 2>/dev/null; then
+        # Last resort: use syslog if available, otherwise exit
+        if command -v logger >/dev/null 2>&1; then
+            logger -t docker-cleanup "ERROR: Cannot write to log file: $LOG_FILE"
+        fi
+        echo "ERROR: Cannot write to log file: $LOG_FILE" >&2
         exit 1
-    }
-}
+    fi
+fi
 
-# Set proper permissions on log file (readable by statex user)
+# Set proper permissions on log file
 chmod 644 "$LOG_FILE" 2>/dev/null || true
 
 log_message "=== Docker Comprehensive Cleanup Started ==="
@@ -71,12 +86,19 @@ fi
 
 # Get disk usage before cleanup
 DISK_BEFORE=$(df -h / | tail -1 | awk '{print $3 " used, " $4 " free"}' 2>/dev/null || echo "unknown")
-DISK_FREE_PERCENT=$(get_disk_free_percent)
-log_message "Disk usage before: $DISK_BEFORE (${DISK_FREE_PERCENT}% free)"
+DISK_USED_PERCENT=$(get_disk_used_percent)
+DISK_FREE_PERCENT=$((100 - DISK_USED_PERCENT))
+log_message "Disk usage before: $DISK_BEFORE (${DISK_USED_PERCENT}% used, ${DISK_FREE_PERCENT}% free)"
+
+# Show Docker system disk usage and reclaimable space
+log_message "Docker system disk usage:"
+docker system df >> "$LOG_FILE" 2>&1
+RECLAIMABLE_BEFORE=$(get_reclaimable_space)
+log_message "Total reclaimable space before cleanup: $RECLAIMABLE_BEFORE"
 
 # Warn if disk space is critically low
-if [ "$DISK_FREE_PERCENT" -gt 90 ]; then
-    log_message "WARNING: Disk space critically low (${DISK_FREE_PERCENT}% used). Aggressive cleanup will be performed."
+if [ "$DISK_USED_PERCENT" -gt 90 ]; then
+    log_message "WARNING: Disk space critically low (${DISK_USED_PERCENT}% used). Aggressive cleanup will be performed."
 fi
 
 # Get resource counts before cleanup
@@ -89,13 +111,27 @@ log_message "Resources before cleanup: Images: $IMAGES_BEFORE, Containers: $CONT
 run_cleanup "stopped containers" "docker container prune -f"
 
 # Cleanup unused images (all unused images, not just dangling)
-run_cleanup "unused images" "docker image prune -a -f"
+# If disk space is critically low, also remove dangling images more aggressively
+if [ "$DISK_USED_PERCENT" -gt 85 ]; then
+    log_message "Disk space low - performing aggressive image cleanup..."
+    # First remove dangling images
+    run_cleanup "dangling images" "docker image prune -f"
+    # Then remove all unused images
+    run_cleanup "unused images" "docker image prune -a -f"
+else
+    run_cleanup "unused images" "docker image prune -a -f"
+fi
 
 # Cleanup unused volumes (only truly unused volumes)
 run_cleanup "unused volumes" "docker volume prune -f"
 
-# Cleanup build cache
+# Cleanup build cache (this can free significant space)
+# Calculate build cache size before cleanup
+BUILD_CACHE_BEFORE=$(docker system df --format "{{.Size}}" | grep -A 1 "Build Cache" | tail -1 || echo "0B")
+log_message "Build cache size before cleanup: $BUILD_CACHE_BEFORE"
 run_cleanup "build cache" "docker builder prune -a -f"
+BUILD_CACHE_AFTER=$(docker system df --format "{{.Size}}" | grep -A 1 "Build Cache" | tail -1 || echo "0B")
+log_message "Build cache size after cleanup: $BUILD_CACHE_AFTER"
 
 # Cleanup unused networks
 run_cleanup "unused networks" "docker network prune -f"
@@ -108,8 +144,15 @@ log_message "Resources after cleanup: Images: $IMAGES_AFTER, Containers: $CONTAI
 
 # Get disk usage after cleanup
 DISK_AFTER=$(df -h / | tail -1 | awk '{print $3 " used, " $4 " free"}' 2>/dev/null || echo "unknown")
-DISK_FREE_PERCENT_AFTER=$(get_disk_free_percent)
-log_message "Disk usage after: $DISK_AFTER (${DISK_FREE_PERCENT_AFTER}% free)"
+DISK_USED_PERCENT_AFTER=$(get_disk_used_percent)
+DISK_FREE_PERCENT_AFTER=$((100 - DISK_USED_PERCENT_AFTER))
+log_message "Disk usage after: $DISK_AFTER (${DISK_USED_PERCENT_AFTER}% used, ${DISK_FREE_PERCENT_AFTER}% free)"
+
+# Show Docker system disk usage after cleanup
+log_message "Docker system disk usage after cleanup:"
+docker system df >> "$LOG_FILE" 2>&1
+RECLAIMABLE_AFTER=$(get_reclaimable_space)
+log_message "Total reclaimable space after cleanup: $RECLAIMABLE_AFTER"
 
 # Show summary of remaining resources (limit to avoid huge logs)
 log_message "Remaining images (showing first 10):"

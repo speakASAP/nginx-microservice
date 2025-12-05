@@ -9,28 +9,38 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 
+# Load environment variables from .env
+if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
+# Set defaults if not in .env
+NETWORK_NAME="${NETWORK_NAME:-nginx-network}"
+
 # Source shared utilities
 source "${SCRIPT_DIR}/startup-utils.sh"
 
 # Function to start nginx-network
 start_nginx_network() {
-    print_status "Checking nginx-network..."
-    if network_exists "nginx-network"; then
-        print_success "Network nginx-network already exists"
+    print_status "Checking ${NETWORK_NAME}..."
+    if network_exists "${NETWORK_NAME}"; then
+        print_success "Network ${NETWORK_NAME} already exists"
         print_detail "Network details:"
-        docker network inspect nginx-network --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
+        docker network inspect "${NETWORK_NAME}" --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
         return 0
     fi
     
-    print_status "Creating nginx-network..."
-    print_detail "Executing: docker network create nginx-network"
-    if docker network create nginx-network 2>&1; then
-        print_success "Network nginx-network created successfully"
+    print_status "Creating ${NETWORK_NAME}..."
+    print_detail "Executing: docker network create ${NETWORK_NAME}"
+    if docker network create "${NETWORK_NAME}" 2>&1; then
+        print_success "Network ${NETWORK_NAME} created successfully"
         print_detail "Network details:"
-        docker network inspect nginx-network --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
+        docker network inspect "${NETWORK_NAME}" --format '  - Subnet: {{range .IPAM.Config}}{{.Subnet}}{{end}}' 2>&1 || true
         return 0
     else
-        print_error "Failed to create nginx-network"
+        print_error "Failed to create ${NETWORK_NAME}"
         return 1
     fi
 }

@@ -5,6 +5,19 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Load environment variables from .env
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
+# Set defaults if not in .env
+NETWORK_NAME="${NETWORK_NAME:-nginx-network}"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -31,23 +44,23 @@ echo ""
 # Check 2: Network connectivity
 echo -e "${YELLOW}2. Checking Network Connectivity${NC}"
 echo "----------------------------------------"
-if docker network inspect nginx-network > /dev/null 2>&1; then
-    echo -e "${GREEN}✅ nginx-network exists${NC}"
+if docker network inspect "${NETWORK_NAME}" > /dev/null 2>&1; then
+    echo -e "${GREEN}✅ ${NETWORK_NAME} exists${NC}"
     
     # Check if containers are on the network
-    NETWORK_CONTAINERS=$(docker network inspect nginx-network --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "")
+    NETWORK_CONTAINERS=$(docker network inspect "${NETWORK_NAME}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null || echo "")
     if echo "$NETWORK_CONTAINERS" | grep -q "allegro"; then
-        echo -e "${GREEN}✅ Allegro containers are on nginx-network${NC}"
+        echo -e "${GREEN}✅ Allegro containers are on ${NETWORK_NAME}${NC}"
         echo "   Containers on network:"
         echo "$NETWORK_CONTAINERS" | tr ' ' '\n' | grep allegro | sed 's/^/   - /'
     else
-        echo -e "${RED}❌ No Allegro containers found on nginx-network${NC}"
+        echo -e "${RED}❌ No Allegro containers found on ${NETWORK_NAME}${NC}"
         echo "   Available containers on network:"
         echo "$NETWORK_CONTAINERS" | tr ' ' '\n' | sed 's/^/   - /'
     fi
 else
-    echo -e "${RED}❌ nginx-network does not exist${NC}"
-    echo "   Create it with: docker network create nginx-network"
+    echo -e "${RED}❌ ${NETWORK_NAME} does not exist${NC}"
+    echo "   Create it with: docker network create ${NETWORK_NAME}"
 fi
 echo ""
 

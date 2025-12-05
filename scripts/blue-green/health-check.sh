@@ -49,10 +49,11 @@ check_health() {
         retries=3
     fi
     
+    local network_name="${NETWORK_NAME:-nginx-network}"
     local attempt=0
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
-        if docker run --rm --network nginx-network alpine/curl:latest \
+        if docker run --rm --network "${network_name}" alpine/curl:latest \
             curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" >/dev/null 2>&1; then
             return 0
         fi
