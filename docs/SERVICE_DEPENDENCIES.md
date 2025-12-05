@@ -75,6 +75,16 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Host Port**: `${PORT:-3368}` (configured in `notifications-microservice/.env`), **Container Port**: `${PORT:-3368}`
 - **Health Endpoint**: `/health`
 
+#### ai-microservice
+
+- **Purpose**: AI microservice (starts after all other microservices, before applications)
+- **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
+- **Startup Order**: 7 (starts after all other microservices, before applications)
+- **Shared Services**: `postgres`, `redis`
+- **Container**: `ai-microservice-blue` / `ai-microservice-green`
+- **Host Port**: `${PORT:-3371}` (configured in `ai-microservice/.env`), **Container Port**: `${PORT:-3371}`
+- **Health Endpoint**: `/health`
+
 ### 3. Applications (May Depend on Microservices)
 
 These applications may depend on microservices and should be started after all microservices are running:
@@ -159,6 +169,15 @@ These applications may depend on microservices and should be started after all m
                                            │redis)               │
                                            └─────────────────────┘
                                                       │
+                                           ┌──────────▼──────────┐
+                                           │  ai-microservice    │
+                                           │  (needs postgres +  │
+                                           │  redis)             │
+                                           │  (starts after all  │
+                                           │  other microservices│
+                                           │  before applications)│
+                                           └─────────────────────┘
+                                                      │
            ┌──────────────────────────────────────────┼────────────────────────┐
            │                                          │                        │
            │                                          │                        │
@@ -186,14 +205,15 @@ These applications may depend on microservices and should be started after all m
 3. Start `database-server` (postgres + redis)
 4. Wait for infrastructure health checks
 
-### Phase 2: Microservices (Order: 3-6)
+### Phase 2: Microservices (Order: 3-7)
 
 1. Start `logging-microservice` (no dependencies)
 2. Start `auth-microservice` (needs postgres)
 3. Start `payment-microservice` (needs postgres)
 4. Start `notifications-microservice` (needs postgres + redis)
+5. Start `ai-microservice` (needs postgres + redis)
 
-### Phase 3: Applications (Order: 7-10)
+### Phase 3: Applications (Order: 8-10)
 
 1. Start `crypto-ai-agent` (needs postgres + redis)
 2. Start `statex` (main application - includes frontend, submission-service, user-portal, content-service, ai-orchestrator, api-gateway)

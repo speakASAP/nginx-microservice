@@ -1,0 +1,24 @@
+{
+  "service_name": "ai-microservice",
+  "service_path": "/Users/sergiystashok/Documents/GitHub/ai-microservice",
+  "production_path": "/home/statex/ai-microservice",
+  "domain": "ai.statex.cz",
+  "docker_compose_file": "docker-compose.blue.yml",
+  "docker_project_base": "ai_microservice",
+  "services": {
+    "backend": {
+      "container_name_base": "ai-microservice",
+      "port": 3371,
+      "health_endpoint": "/health",
+      "health_timeout": 5,
+      "health_retries": 3,
+      "startup_time": 30
+    }
+  },
+  "shared_services": [
+    "postgres",
+    "redis"
+  ],
+  "network": "nginx-network"
+}
+

@@ -66,6 +66,7 @@ MICROSERVICES=(
     "payment-microservice"
     "auth-microservice"
     "logging-microservice"
+    "ai-microservice"
 )
 
 INFRASTRUCTURE_SERVICES=(

@@ -578,14 +578,21 @@ The nginx-microservice includes a zero-downtime blue/green deployment system for
 
 All services are now standardized and managed through the blue/green deployment system:
 
+#### Microservices
+
+- **ai-microservice** - AI microservice
 - **auth-microservice** - Authentication service
-- **crypto-ai-agent** - Crypto AI agent application
 - **database-server** - Database infrastructure (shared)
-- **e-commerce** - E-commerce platform (heavy application with 10+ internal services)
 - **logging-microservice** - Centralized logging service
 - **nginx-microservice** - This reverse proxy service
 - **notifications-microservice** - Notification service
 - **payment-microservice** - Payment processing service
+
+#### Applications
+
+- **allegro** - Allegro sales platform management
+- **crypto-ai-agent** - Crypto AI agent application
+- **e-commerce** - E-commerce platform
 - **statex** - Main statex platform application
 
 ### Service Dependencies and Startup Order
@@ -633,7 +640,7 @@ All services have dependencies that must be respected when starting the system. 
 
 1. **Nginx** (Phase 1 - always runs): nginx-network → nginx-microservice
 2. **Infrastructure** (Phase 2): database-server (postgres + redis)
-3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payment-microservice → notifications-microservice
+3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payment-microservice → notifications-microservice → ai-microservice
 4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → e-commerce
 
 **Fault Tolerance**:

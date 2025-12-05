@@ -61,6 +61,27 @@ if [ ${#MICROSERVICES[@]} -eq 0 ]; then
     exit 1
 fi
 
+# Reorder microservices: ai-microservice should start last (after all other microservices)
+# This ensures it starts after all other microservices but before applications
+declare -a ORDERED_MICROSERVICES=()
+declare -a OTHER_MICROSERVICES=()
+for service in "${MICROSERVICES[@]}"; do
+    if [ "$service" = "ai-microservice" ]; then
+        # ai-microservice will be added at the end
+        continue
+    else
+        OTHER_MICROSERVICES+=("$service")
+    fi
+done
+
+# Add all other microservices first, then ai-microservice at the end
+ORDERED_MICROSERVICES=("${OTHER_MICROSERVICES[@]}")
+if [[ " ${MICROSERVICES[@]} " =~ " ai-microservice " ]]; then
+    ORDERED_MICROSERVICES+=("ai-microservice")
+fi
+
+MICROSERVICES=("${ORDERED_MICROSERVICES[@]}")
+
 print_status "Found ${#MICROSERVICES[@]} microservice(s) to check:"
 for service in "${MICROSERVICES[@]}"; do
     print_detail "  - $service"
