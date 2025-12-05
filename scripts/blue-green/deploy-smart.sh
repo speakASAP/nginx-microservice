@@ -16,14 +16,23 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Starting smart blue/green deployment"
 
-# Validate service exists in registry
+# Check if registry exists, if not, try to auto-create it
 REGISTRY_FILE="${REGISTRY_DIR}/${SERVICE_NAME}.json"
 if [ ! -f "$REGISTRY_FILE" ]; then
-    print_error "Service not found in registry: $SERVICE_NAME"
-    exit 1
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Registry file not found, attempting to auto-create it"
+    
+    # Try to auto-create registry
+    if ! auto_create_service_registry "$SERVICE_NAME"; then
+        print_error "Service not found in registry: $SERVICE_NAME"
+        print_error "Auto-creation failed. Please create registry manually:"
+        print_error "  ./scripts/add-service-registry.sh $SERVICE_NAME"
+        exit 1
+    fi
+    
+    log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Registry file auto-created successfully"
+else
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Service validated in registry"
 fi
-
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Service validated in registry"
 
 # Pre-deployment: Check for restarting containers and port conflicts
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
