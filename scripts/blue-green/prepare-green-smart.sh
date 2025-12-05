@@ -446,18 +446,53 @@ check_health() {
 }
 
 # Check backend health (if exists)
-BACKEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.backend.container_name_base // empty')
+BACKEND_CONTAINER_BASE=$(echo "$REGISTRY" | jq -r '.services.backend.container_name_base // empty')
 BACKEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.backend.health_endpoint // empty')
 BACKEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.backend.health_timeout // 5')
 BACKEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.backend.health_retries // 3')
 
 # Get backend port with auto-detection
-if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ]; then
-    BACKEND_PORT=$(get_container_port "$SERVICE_NAME" "backend" "$BACKEND_CONTAINER" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
+if [ -n "$BACKEND_CONTAINER_BASE" ] && [ "$BACKEND_CONTAINER_BASE" != "null" ]; then
+    BACKEND_PORT=$(get_container_port "$SERVICE_NAME" "backend" "$BACKEND_CONTAINER_BASE" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
 fi
 
-if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ] && [ -n "$BACKEND_PORT" ] && [ "$BACKEND_PORT" != "null" ]; then
-    BACKEND_CONTAINER="${BACKEND_CONTAINER}-${PREPARE_COLOR}"
+if [ -n "$BACKEND_CONTAINER_BASE" ] && [ "$BACKEND_CONTAINER_BASE" != "null" ] && [ -n "$BACKEND_PORT" ] && [ "$BACKEND_PORT" != "null" ]; then
+    # Get actual container name from compose config (may be different from expected)
+    escaped_service=$(printf '%s\n' "backend" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    BACKEND_CONTAINER=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${escaped_service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
+    
+    # If compose config doesn't have container_name, try to find actual running container
+    if [ -z "$BACKEND_CONTAINER" ]; then
+        # Try PROJECT_NAME-SERVICE_NAME format (with underscores converted to hyphens)
+        PROJECT_NAME_HYPHEN=$(echo "$PROJECT_NAME" | tr '_' '-')
+        BACKEND_CONTAINER="${PROJECT_NAME_HYPHEN}-backend"
+        
+        # Check if this container exists
+        if ! docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER}$"; then
+            # Try alternative: container_name_base without color suffix
+            if docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER_BASE}$"; then
+                BACKEND_CONTAINER="$BACKEND_CONTAINER_BASE"
+            # Try with color suffix
+            elif docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER_BASE}-${PREPARE_COLOR}$"; then
+                BACKEND_CONTAINER="${BACKEND_CONTAINER_BASE}-${PREPARE_COLOR}"
+            else
+                # Find any running container that matches the container_name_base pattern
+                FOUND_CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "^${BACKEND_CONTAINER_BASE}(-.*)?$" | head -1 || echo "")
+                if [ -n "$FOUND_CONTAINER" ]; then
+                    BACKEND_CONTAINER="$FOUND_CONTAINER"
+                fi
+            fi
+        fi
+    else
+        # Container name from compose config exists, verify it's running
+        if ! docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER}$"; then
+            # Try to find by container_name_base as fallback
+            if docker ps --format "{{.Names}}" | grep -q "^${BACKEND_CONTAINER_BASE}$"; then
+                BACKEND_CONTAINER="$BACKEND_CONTAINER_BASE"
+            fi
+        fi
+    fi
+    
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking backend health: $BACKEND_CONTAINER:$BACKEND_PORT${BACKEND_HEALTH}"
     
     if check_health "$BACKEND_CONTAINER" "$BACKEND_PORT" "${BACKEND_HEALTH:-/health}" "$BACKEND_TIMEOUT" "$BACKEND_RETRIES"; then
@@ -470,18 +505,53 @@ if [ -n "$BACKEND_CONTAINER" ] && [ "$BACKEND_CONTAINER" != "null" ] && [ -n "$B
 fi
 
 # Check frontend health (if exists)
-FRONTEND_CONTAINER=$(echo "$REGISTRY" | jq -r '.services.frontend.container_name_base // empty')
+FRONTEND_CONTAINER_BASE=$(echo "$REGISTRY" | jq -r '.services.frontend.container_name_base // empty')
 FRONTEND_HEALTH=$(echo "$REGISTRY" | jq -r '.services.frontend.health_endpoint // empty')
 FRONTEND_TIMEOUT=$(echo "$REGISTRY" | jq -r '.services.frontend.health_timeout // 5')
 FRONTEND_RETRIES=$(echo "$REGISTRY" | jq -r '.services.frontend.health_retries // 3')
 
 # Get frontend port with auto-detection
-if [ -n "$FRONTEND_CONTAINER" ] && [ "$FRONTEND_CONTAINER" != "null" ]; then
-    FRONTEND_PORT=$(get_container_port "$SERVICE_NAME" "frontend" "$FRONTEND_CONTAINER" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
+if [ -n "$FRONTEND_CONTAINER_BASE" ] && [ "$FRONTEND_CONTAINER_BASE" != "null" ]; then
+    FRONTEND_PORT=$(get_container_port "$SERVICE_NAME" "frontend" "$FRONTEND_CONTAINER_BASE" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare")
 fi
 
-if [ -n "$FRONTEND_CONTAINER" ] && [ "$FRONTEND_CONTAINER" != "null" ] && [ -n "$FRONTEND_PORT" ] && [ "$FRONTEND_PORT" != "null" ]; then
-    FRONTEND_CONTAINER="${FRONTEND_CONTAINER}-${PREPARE_COLOR}"
+if [ -n "$FRONTEND_CONTAINER_BASE" ] && [ "$FRONTEND_CONTAINER_BASE" != "null" ] && [ -n "$FRONTEND_PORT" ] && [ "$FRONTEND_PORT" != "null" ]; then
+    # Get actual container name from compose config (may be different from expected)
+    escaped_service=$(printf '%s\n' "frontend" | sed 's/[[\.*^$()+?{|]/\\&/g')
+    FRONTEND_CONTAINER=$(echo "$COMPOSE_CONFIG" | docker compose -f - -p "$PROJECT_NAME" config 2>/dev/null | grep -A5 "services:" | grep -A5 "^  ${escaped_service}:" | grep "container_name:" | awk '{print $2}' | tr -d '"' || echo "")
+    
+    # If compose config doesn't have container_name, try to find actual running container
+    if [ -z "$FRONTEND_CONTAINER" ]; then
+        # Try PROJECT_NAME-SERVICE_NAME format (with underscores converted to hyphens)
+        PROJECT_NAME_HYPHEN=$(echo "$PROJECT_NAME" | tr '_' '-')
+        FRONTEND_CONTAINER="${PROJECT_NAME_HYPHEN}-frontend"
+        
+        # Check if this container exists
+        if ! docker ps --format "{{.Names}}" | grep -q "^${FRONTEND_CONTAINER}$"; then
+            # Try alternative: container_name_base without color suffix
+            if docker ps --format "{{.Names}}" | grep -q "^${FRONTEND_CONTAINER_BASE}$"; then
+                FRONTEND_CONTAINER="$FRONTEND_CONTAINER_BASE"
+            # Try with color suffix
+            elif docker ps --format "{{.Names}}" | grep -q "^${FRONTEND_CONTAINER_BASE}-${PREPARE_COLOR}$"; then
+                FRONTEND_CONTAINER="${FRONTEND_CONTAINER_BASE}-${PREPARE_COLOR}"
+            else
+                # Find any running container that matches the container_name_base pattern
+                FOUND_CONTAINER=$(docker ps --format "{{.Names}}" | grep -E "^${FRONTEND_CONTAINER_BASE}(-.*)?$" | head -1 || echo "")
+                if [ -n "$FOUND_CONTAINER" ]; then
+                    FRONTEND_CONTAINER="$FOUND_CONTAINER"
+                fi
+            fi
+        fi
+    else
+        # Container name from compose config exists, verify it's running
+        if ! docker ps --format "{{.Names}}" | grep -q "^${FRONTEND_CONTAINER}$"; then
+            # Try to find by container_name_base as fallback
+            if docker ps --format "{{.Names}}" | grep -q "^${FRONTEND_CONTAINER_BASE}$"; then
+                FRONTEND_CONTAINER="$FRONTEND_CONTAINER_BASE"
+            fi
+        fi
+    fi
+    
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking frontend health: $FRONTEND_CONTAINER:$FRONTEND_PORT${FRONTEND_HEALTH}"
     
     if check_health "$FRONTEND_CONTAINER" "$FRONTEND_PORT" "${FRONTEND_HEALTH:-/}" "$FRONTEND_TIMEOUT" "$FRONTEND_RETRIES"; then
