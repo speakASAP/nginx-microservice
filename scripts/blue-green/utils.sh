@@ -319,7 +319,12 @@ auto_create_service_registry() {
     # Try to extract services from docker-compose file
     local services_json=""
     if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1 && [ -f "${service_path}/${compose_file}" ]; then
-        local compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config 2>/dev/null || echo "")
+        # Use JSON format if jq is available, YAML if yq is available
+        local compose_format=""
+        if command -v jq >/dev/null 2>&1; then
+            compose_format="--format json"
+        fi
+        local compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config $compose_format 2>/dev/null || echo "")
         
         if [ -n "$compose_config" ]; then
             # Extract service keys from docker-compose
