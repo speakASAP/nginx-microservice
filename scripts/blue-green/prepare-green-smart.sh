@@ -86,6 +86,24 @@ fi
 # Determine project name
 PROJECT_NAME="${DOCKER_PROJECT_BASE}_${PREPARE_COLOR}"
 
+# Log compose file information for debugging
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Using compose file: $COMPOSE_FILE"
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Working directory: $(pwd)"
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Project name: $PROJECT_NAME"
+
+# Verify compose file exists and is readable
+if [ ! -f "$COMPOSE_FILE" ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Compose file does not exist: $COMPOSE_FILE"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Current directory: $(pwd)"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Available compose files: $(ls -1 docker-compose*.yml docker-compose*.yaml 2>/dev/null | tr '\n' ' ' || echo 'none')"
+    exit 1
+fi
+
+if [ ! -r "$COMPOSE_FILE" ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Compose file is not readable: $COMPOSE_FILE"
+    exit 1
+fi
+
 # Function to check if service code has changed
 service_needs_rebuild() {
     local service_name="$1"
