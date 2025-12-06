@@ -178,12 +178,40 @@ detect_container_port_from_compose() {
     
     # Fallback: try to read from .env file in service directory
     if [ -z "$container_port" ] && [ -f "${service_path}/.env" ]; then
-        # Look for PORT variable or service-specific port variable
+        # Look for PORT variable with priority order:
+        # 1. Service-specific port (e.g., PAYMENT_SERVICE_PORT=)
+        # 2. Container base port (e.g., PAYMENT_MICROSERVICE_PORT=)
+        # 3. SERVICE_PORT= (common convention used in docker-compose)
+        # 4. Generic PORT= (last resort, but avoid matching FRONTEND_PORT, API_GATEWAY_PORT, etc.)
         # Use grep -F (fixed string) so no escaping needed - treats all characters as literals
         local service_key_upper="${service_key^^}"
         local container_base_upper="${container_base^^}"
-        local env_port=$(grep -F -e "PORT=" -e "${service_key_upper}_PORT=" -e "${container_base_upper}_PORT=" "${service_path}/.env" 2>/dev/null | \
-            cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        local env_port=""
+        
+        # Try service-specific first
+        if [ -z "$env_port" ]; then
+            env_port=$(grep -F "^${service_key_upper}_PORT=" "${service_path}/.env" 2>/dev/null | \
+                cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        fi
+        
+        # Try container base specific
+        if [ -z "$env_port" ]; then
+            env_port=$(grep -F "^${container_base_upper}_PORT=" "${service_path}/.env" 2>/dev/null | \
+                cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        fi
+        
+        # Try SERVICE_PORT= (common convention)
+        if [ -z "$env_port" ]; then
+            env_port=$(grep -F "^SERVICE_PORT=" "${service_path}/.env" 2>/dev/null | \
+                cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        fi
+        
+        # Last resort: generic PORT= (but only if it's exactly "PORT=", not part of another variable)
+        if [ -z "$env_port" ]; then
+            env_port=$(grep -E "^PORT=" "${service_path}/.env" 2>/dev/null | \
+                cut -d'=' -f2 | tr -d '"' | tr -d "'" | head -1 || echo "")
+        fi
+        
         if [ -n "$env_port" ]; then
             container_port="$env_port"
         fi

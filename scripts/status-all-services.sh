@@ -275,7 +275,7 @@ format_infrastructure_status() {
     elif echo "$status" | grep -qE "healthy"; then
         echo -e "  ${GREEN_CHECK} $container_name: $status"
     elif echo "$status" | grep -qE "Up"; then
-        echo -e "  ${YELLOW}⚠${NC}  $container_name: $status"
+        echo -e "  ${GREEN_CHECK} $container_name: $status"
     else
         echo -e "  ${RED_X} $container_name: $status"
     fi
