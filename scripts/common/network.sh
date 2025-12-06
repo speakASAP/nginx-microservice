@@ -108,12 +108,109 @@ check_https_url() {
         fi
     done
     
-    # All attempts failed
+    # All attempts failed - add comprehensive diagnostics
     if [ -n "$service_name" ]; then
         if type log_message >/dev/null 2>&1; then
             log_message "ERROR" "$service_name" "$color" "https-check" "HTTPS check failed: $url (all $retries attempts failed)"
+            
+            # Add comprehensive diagnostics
+            diagnose_https_failure "$domain" "$service_name" "$color" "$url"
         fi
     fi
     return 1
+}
+
+# Function to diagnose HTTPS check failures
+diagnose_https_failure() {
+    local domain="$1"
+    local service_name="$2"
+    local color="${3:-}"
+    local url="$4"
+    
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    local nginx_container="nginx-microservice"
+    
+    # Check nginx container status
+    if docker ps --format "{{.Names}}" | grep -q "^${nginx_container}$"; then
+        local nginx_status=$(docker ps --filter "name=${nginx_container}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+        log_message "INFO" "$service_name" "$color" "https-diagnose" "Nginx container status: ${nginx_status}"
+        
+        # Check nginx error logs for this domain (last 10 lines)
+        local nginx_errors=$(docker logs --tail 10 "${nginx_container}" 2>&1 | grep -i "${domain}" | tail -5 || echo "no domain-specific errors found")
+        if [ -n "$nginx_errors" ] && [ "$nginx_errors" != "no domain-specific errors found" ]; then
+            log_message "WARNING" "$service_name" "$color" "https-diagnose" "Nginx errors for ${domain}: ${nginx_errors}"
+        fi
+    else
+        log_message "WARNING" "$service_name" "$color" "https-diagnose" "Nginx container not running"
+    fi
+    
+    # Check service container status if service_name provided
+    if [ -n "$service_name" ]; then
+        # Try to load service registry to get container names
+        if type load_service_registry >/dev/null 2>&1; then
+            local registry=$(load_service_registry "$service_name" 2>/dev/null)
+            if [ -n "$registry" ]; then
+                # Get active color from state if not provided
+                if [ -z "$color" ] || [ "$color" = "null" ]; then
+                    if type load_state >/dev/null 2>&1; then
+                        local state=$(load_state "$service_name" "$domain" 2>/dev/null)
+                        color=$(echo "$state" | jq -r '.active_color // "blue"' 2>/dev/null || echo "blue")
+                    else
+                        color="blue"
+                    fi
+                fi
+                
+                # Check backend service container
+                local backend_container=$(echo "$registry" | jq -r '.services.backend.container_name_base // empty' 2>/dev/null)
+                if [ -n "$backend_container" ] && [ "$backend_container" != "null" ]; then
+                    local backend_container_name="${backend_container}-${color}"
+                    if docker ps --format "{{.Names}}" | grep -q "^${backend_container_name}$"; then
+                        local backend_status=$(docker ps --filter "name=${backend_container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+                        log_message "INFO" "$service_name" "$color" "https-diagnose" "Backend container ${backend_container_name} status: ${backend_status}"
+                        
+                        # Try to check backend health directly
+                        local backend_port=$(echo "$registry" | jq -r '.services.backend.container_port // empty' 2>/dev/null)
+                        if [ -n "$backend_port" ] && [ "$backend_port" != "null" ]; then
+                            # Try HTTP health check from nginx container
+                            if docker ps --format "{{.Names}}" | grep -q "^${nginx_container}$"; then
+                                local health_response=$(docker exec "${nginx_container}" curl -s -w "\nHTTP_CODE:%{http_code}" --max-time 3 "http://${backend_container_name}:${backend_port}/health" 2>&1 || echo "connection failed")
+                                local http_code=$(echo "$health_response" | grep "HTTP_CODE:" | cut -d: -f2 || echo "unknown")
+                                log_message "INFO" "$service_name" "$color" "https-diagnose" "Backend health check (http://${backend_container_name}:${backend_port}/health): HTTP ${http_code}"
+                            fi
+                        fi
+                    else
+                        log_message "WARNING" "$service_name" "$color" "https-diagnose" "Backend container ${backend_container_name} not running"
+                    fi
+                fi
+                
+                # Check if service has frontend
+                local frontend_container=$(echo "$registry" | jq -r '.services.frontend.container_name_base // empty' 2>/dev/null)
+                if [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
+                    local frontend_container_name="${frontend_container}-${color}"
+                    if docker ps --format "{{.Names}}" | grep -q "^${frontend_container_name}$"; then
+                        local frontend_status=$(docker ps --filter "name=${frontend_container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+                        log_message "INFO" "$service_name" "$color" "https-diagnose" "Frontend container ${frontend_container_name} status: ${frontend_status}"
+                    else
+                        log_message "WARNING" "$service_name" "$color" "https-diagnose" "Frontend container ${frontend_container_name} not running"
+                    fi
+                fi
+            fi
+        fi
+    fi
+    
+    # Try to get HTTP response code and headers from nginx container
+    if docker ps --format "{{.Names}}" | grep -q "^${nginx_container}$"; then
+        local http_response=$(docker exec "${nginx_container}" curl -s -w "\nHTTP_CODE:%{http_code}\nHTTP_STATUS:%{http_code}" --max-time 3 -k "$url" 2>&1 || echo "connection failed")
+        local http_code=$(echo "$http_response" | grep "HTTP_CODE:" | cut -d: -f2 | head -1 || echo "unknown")
+        log_message "INFO" "$service_name" "$color" "https-diagnose" "HTTP response code from nginx: ${http_code}"
+        
+        # If we got a response, show first line
+        if [ "$http_code" != "unknown" ] && [ "$http_code" != "000" ]; then
+            local response_preview=$(echo "$http_response" | head -1 | cut -c1-100)
+            if [ -n "$response_preview" ] && [ "$response_preview" != "connection failed" ]; then
+                log_message "INFO" "$service_name" "$color" "https-diagnose" "Response preview: ${response_preview}..."
+            fi
+        fi
+    fi
 }
 

@@ -55,14 +55,26 @@ log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Note: Infrastruc
 # Navigate to service directory
 cd "$ACTUAL_PATH"
 
-# Determine docker compose file
-COMPOSE_FILE="docker-compose.${INACTIVE_COLOR}.yml"
-PROJECT_NAME="${DOCKER_PROJECT_BASE}_${INACTIVE_COLOR}"
-
-if [ ! -f "$COMPOSE_FILE" ]; then
-    log_message "WARNING" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Docker compose file not found: $COMPOSE_FILE"
-    exit 0
+# Determine docker compose file (same logic as prepare-green-smart.sh)
+REGISTRY_COMPOSE_FILE=$(echo "$REGISTRY" | jq -r '.docker_compose_file')
+if [ -z "$REGISTRY_COMPOSE_FILE" ] || [ "$REGISTRY_COMPOSE_FILE" = "null" ]; then
+    COMPOSE_FILE="docker-compose.${SERVICE_NAME}.${INACTIVE_COLOR}.yml"
+else
+    COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${INACTIVE_COLOR}.yml/")
 fi
+
+# Fallback to generic docker-compose.yml if color-specific file doesn't exist
+if [ ! -f "$COMPOSE_FILE" ]; then
+    if [ -f "docker-compose.yml" ]; then
+        log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Color-specific compose file not found, using docker-compose.yml"
+        COMPOSE_FILE="docker-compose.yml"
+    else
+        log_message "WARNING" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Docker compose file not found: $COMPOSE_FILE (and docker-compose.yml not found)"
+        exit 0
+    fi
+fi
+
+PROJECT_NAME="${DOCKER_PROJECT_BASE}_${INACTIVE_COLOR}"
 
 # Stop and remove containers
 log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Stopping and removing $INACTIVE_COLOR containers"
