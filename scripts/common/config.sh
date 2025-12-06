@@ -425,10 +425,12 @@ generate_proxy_locations() {
     
     # Generate frontend location (root path) - using shared include
     if [ "$has_frontend" = "true" ] && [ -n "$frontend_container" ] && [ "$frontend_container" != "null" ]; then
-        # Use upstream block name (container_base without color) - upstream block includes port and resolve directive
-        # The upstream block is named after container_base and includes both blue and green servers with ports
+        # Use upstream block name with color suffix to match upstream block naming (container_base-color)
+        # The upstream block is named ${container_base}-${active_color} (e.g., statex-frontend-green)
+        # So the variable must also include the color suffix to match
+        local frontend_upstream="${frontend_container}-${active_color}"
         proxy_locations="${proxy_locations}    # Frontend service - root path
-    set \$FRONTEND_UPSTREAM ${frontend_container};
+    set \$FRONTEND_UPSTREAM ${frontend_upstream};
     include /etc/nginx/includes/frontend-location.conf;
     
 "
