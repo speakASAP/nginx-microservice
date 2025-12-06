@@ -183,14 +183,35 @@ else
     log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 4 skipped: No domain configured in registry"
 fi
 
-# Phase 5: Cleanup old color
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5: Cleaning up old blue deployment"
+# Phase 5: Cleanup old color (optional - can be disabled in registry)
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5: Cleaning up old deployment"
 
-if ! "${SCRIPT_DIR}/cleanup.sh" "$SERVICE_NAME"; then
-    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 warning: cleanup.sh had issues, but deployment is successful"
+# Check if cleanup is enabled (default: true for backward compatibility)
+CLEANUP_ENABLED=$(echo "$REGISTRY" | jq -r '.cleanup_after_deployment // true' 2>/dev/null)
+
+if [ "$CLEANUP_ENABLED" = "true" ] || [ "$CLEANUP_ENABLED" = "null" ]; then
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Cleanup enabled: Stopping old color containers"
+    
+    if ! "${SCRIPT_DIR}/cleanup.sh" "$SERVICE_NAME"; then
+        log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 warning: cleanup.sh had issues, but deployment is successful"
+    fi
+    
+    log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 completed: Old deployment cleaned up"
+    
+    # Verify new deployment is still healthy after cleanup
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 verification: Checking health after cleanup"
+    
+    if "${SCRIPT_DIR}/health-check.sh" "$SERVICE_NAME"; then
+        log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 verification passed: New deployment healthy after cleanup"
+    else
+        log_message "ERROR" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 verification failed: New deployment unhealthy after cleanup"
+        log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Note: Old containers were already stopped, manual intervention may be required"
+        # Don't exit - deployment was successful, this is just a post-cleanup check
+    fi
+else
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 skipped: Cleanup disabled in registry (old containers kept for rollback)"
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "To manually cleanup later, run: ./scripts/blue-green/cleanup.sh $SERVICE_NAME"
 fi
-
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 completed: Old deployment cleaned up"
 
 # Final success
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="

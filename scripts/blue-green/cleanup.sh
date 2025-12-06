@@ -76,13 +76,21 @@ fi
 
 PROJECT_NAME="${DOCKER_PROJECT_BASE}_${INACTIVE_COLOR}"
 
-# Stop and remove containers
-log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Stopping and removing $INACTIVE_COLOR containers"
+# Check if project has any containers before attempting cleanup
+# This prevents the "No resource found to remove" warning
+HAS_CONTAINERS=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" ps -q 2>/dev/null | grep -c . || echo "0")
 
-if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down; then
-    log_message "SUCCESS" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Stopped and removed $INACTIVE_COLOR containers"
+if [ "$HAS_CONTAINERS" -gt 0 ]; then
+    # Stop and remove containers
+    log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Stopping and removing $INACTIVE_COLOR containers"
+    
+    if docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down >/dev/null 2>&1; then
+        log_message "SUCCESS" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Stopped and removed $INACTIVE_COLOR containers"
+    else
+        log_message "WARNING" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Some containers may not have been removed"
+    fi
 else
-    log_message "WARNING" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "Some containers may not have been removed"
+    log_message "INFO" "$SERVICE_NAME" "$INACTIVE_COLOR" "cleanup" "No containers found for $INACTIVE_COLOR project, skipping cleanup"
 fi
 
 # Optional: Remove images (commented out by default)
