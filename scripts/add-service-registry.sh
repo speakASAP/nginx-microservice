@@ -102,8 +102,8 @@ while true; do
     read -p "Health retries [3]: " HEALTH_RETRIES
     HEALTH_RETRIES="${HEALTH_RETRIES:-3}"
     
-    read -p "Startup time (seconds) [30]: " STARTUP_TIME
-    STARTUP_TIME="${STARTUP_TIME:-30}"
+    read -p "Startup time (seconds) [5]: " STARTUP_TIME
+    STARTUP_TIME="${STARTUP_TIME:-5}"
     
     # Build service JSON
     SERVICE_JSON="\"${SERVICE_KEY}\": {"

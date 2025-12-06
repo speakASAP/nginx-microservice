@@ -209,8 +209,8 @@ auto_create_service_registry() {
                     service_json="${service_json}\"container_name_base\": \"${container_name_base}\","
                     service_json="${service_json}\"health_endpoint\": \"/health\","
                     service_json="${service_json}\"health_timeout\": 5,"
-                    service_json="${service_json}\"health_retries\": 3,"
-                    service_json="${service_json}\"startup_time\": 30"
+                    service_json="${service_json}\"health_retries\": 2,"
+                    service_json="${service_json}\"startup_time\": 5"
                     service_json="${service_json}}"
                     
                     if [ "$first" = true ]; then
@@ -230,8 +230,8 @@ auto_create_service_registry() {
         services_json="${services_json}\"container_name_base\": \"${service_name}\","
         services_json="${services_json}\"health_endpoint\": \"/health\","
         services_json="${services_json}\"health_timeout\": 5,"
-        services_json="${services_json}\"health_retries\": 3,"
-        services_json="${services_json}\"startup_time\": 30"
+        services_json="${services_json}\"health_retries\": 2,"
+        services_json="${services_json}\"startup_time\": 5"
         services_json="${services_json}}"
         log_message "WARNING" "$service_name" "deploy" "auto-registry" "Could not detect services from docker-compose, using default 'backend' service"
     fi

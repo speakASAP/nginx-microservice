@@ -99,22 +99,27 @@ fi
 
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 2 completed: Traffic switched to green"
 
-# Phase 3: Monitor health for 2 minutes
+# Phase 3: Monitor health for 30 seconds
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 3: Monitoring health for 5 minutes"
 
-MONITOR_DURATION=120  # 2 minutes in seconds
-CHECK_INTERVAL=30     # Check every 30 seconds
+MONITOR_DURATION=30  # 30 seconds
+CHECK_INTERVAL=15     # Check every 15 seconds
 ELAPSED=0
 HEALTHY_CHECKS=0
-REQUIRED_HEALTHY_CHECKS=4  # 2 minutes / 30 seconds = 4 checks
+REQUIRED_HEALTHY_CHECKS=2  # Require 2 successful health checks
 
-while [ $ELAPSED -lt $MONITOR_DURATION ]; do
+while [ $ELAPSED -lt $MONITOR_DURATION ] && [ $HEALTHY_CHECKS -lt $REQUIRED_HEALTHY_CHECKS ]; do
     if "${SCRIPT_DIR}/health-check.sh" "$SERVICE_NAME"; then
         HEALTHY_CHECKS=$((HEALTHY_CHECKS + 1))
         log_message "INFO" "$SERVICE_NAME" "deploy" "monitor" "Health check passed ($HEALTHY_CHECKS/$REQUIRED_HEALTHY_CHECKS)"
     else
         log_message "ERROR" "$SERVICE_NAME" "deploy" "monitor" "Health check failed, rollback already triggered"
         exit 1
+    fi
+    
+    # Exit early if we've reached the required number of successful checks
+    if [ $HEALTHY_CHECKS -ge $REQUIRED_HEALTHY_CHECKS ]; then
+        break
     fi
     
     if [ $ELAPSED -lt $MONITOR_DURATION ]; then
@@ -134,8 +139,8 @@ DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
 
 if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
     # Get HTTPS check configuration from registry (optional)
-    HTTPS_TIMEOUT=$(echo "$REGISTRY" | jq -r '.https_check_timeout // 10' 2>/dev/null)
-    HTTPS_RETRIES=$(echo "$REGISTRY" | jq -r '.https_check_retries // 3' 2>/dev/null)
+    HTTPS_TIMEOUT=$(echo "$REGISTRY" | jq -r '.https_check_timeout // 5' 2>/dev/null)
+    HTTPS_RETRIES=$(echo "$REGISTRY" | jq -r '.https_check_retries // 2' 2>/dev/null)
     HTTPS_ENDPOINT=$(echo "$REGISTRY" | jq -r '.https_check_endpoint // "/"' 2>/dev/null)
     HTTPS_ENABLED=$(echo "$REGISTRY" | jq -r '.https_check_enabled // true' 2>/dev/null)
     

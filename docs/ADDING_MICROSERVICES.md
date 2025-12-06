@@ -31,7 +31,7 @@ Create a JSON file in `service-registry/{service-name}.json` with the following 
       "health_endpoint": "/health",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 30
+      "startup_time": 5
     }
   },
   "shared_services": ["postgres"],
@@ -55,7 +55,7 @@ Create a JSON file in `service-registry/{service-name}.json` with the following 
       "health_endpoint": "/health",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 30
+      "startup_time": 5
     }
   },
   "shared_services": ["postgres"],
@@ -80,7 +80,7 @@ Create a JSON file in `service-registry/{service-name}.json` with the following 
       "health_endpoint": "/",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 30
+      "startup_time": 5
     },
     "backend": {
       "container_name_base": "my-microservice-backend",
@@ -88,7 +88,7 @@ Create a JSON file in `service-registry/{service-name}.json` with the following 
       "health_endpoint": "/api/health",
       "health_timeout": 5,
       "health_retries": 3,
-      "startup_time": 30
+      "startup_time": 5
     }
   },
   "shared_services": [
