@@ -31,7 +31,7 @@ fi
 # Function to check HTTPS URL availability
 check_https_url() {
     local domain="$1"
-    local timeout="${2:-10}"
+    local timeout="${2:-5}"
     local retries="${3:-3}"
     local endpoint="${4:-/}"
     local service_name="${5:-}"
@@ -44,7 +44,7 @@ check_https_url() {
     
     # Ensure timeout and retries are numeric
     if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
-        timeout=10
+        timeout=5
     fi
     if ! [[ "$retries" =~ ^[0-9]+$ ]]; then
         retries=3
@@ -61,13 +61,31 @@ check_https_url() {
         fi
     fi
     
+    # Try to check from nginx container first (more reliable), fallback to host
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
+    local nginx_container="nginx-microservice"
+    
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
-        # Use curl with proper flags for HTTPS check
-        # -s: silent, -f: fail on HTTP errors, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
         local curl_error=""
-        curl_error=$(curl -s -f --max-time "$timeout" -k "$url" 2>&1)
-        local curl_exit_code=$?
+        local curl_exit_code=1
+        
+        # Try from nginx container if it exists and is on the network
+        if docker ps --format "{{.Names}}" | grep -q "^${nginx_container}$" && \
+           docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${nginx_container}( |$)"; then
+            # Check from inside nginx container (can reach localhost:443)
+            curl_error=$(docker exec "${nginx_container}" curl -s -f --max-time "$timeout" -k "$url" 2>&1)
+            curl_exit_code=$?
+        fi
+        
+        # Fallback to host-based check if container check failed or nginx not available
+        if [ $curl_exit_code -ne 0 ]; then
+            # Use curl with proper flags for HTTPS check from host
+            # -s: silent, -f: fail on HTTP errors, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
+            curl_error=$(curl -s -f --max-time "$timeout" -k "$url" 2>&1)
+            curl_exit_code=$?
+        fi
         
         if [ $curl_exit_code -eq 0 ]; then
             if [ -n "$service_name" ]; then
