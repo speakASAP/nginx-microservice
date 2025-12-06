@@ -285,7 +285,7 @@ generate_upstream_blocks() {
         if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
             services_skipped=$((services_skipped + 1))
             if type print_warning >/dev/null 2>&1; then
-                print_warning "container_name_base not found for service $service_key in $service_name - skipping upstream block"
+                print_warning "container_name_base not found for service $service_key in $service_name - skipping upstream block" >&2
             fi
             continue
         fi
@@ -297,7 +297,7 @@ generate_upstream_blocks() {
         if [ -z "$service_port" ] || [ "$service_port" = "null" ]; then
             services_skipped=$((services_skipped + 1))
             if type print_warning >/dev/null 2>&1; then
-                print_warning "Port not found for $service_key in $service_name (container_base: $container_base) - skipping upstream block"
+                print_warning "Port not found for $service_key in $service_name (container_base: $container_base) - skipping upstream block" >&2
             fi
             continue
         fi
@@ -359,19 +359,20 @@ generate_upstream_blocks() {
 "
     done <<< "$service_keys"
     
-    # Warn if no upstream blocks were generated
+    # Warn if no upstream blocks were generated (redirect to stderr to avoid contaminating stdout)
     if [ -z "$upstream_blocks" ]; then
         if type print_error >/dev/null 2>&1; then
-            print_error "Failed to generate upstream blocks for $service_name (domain: ${domain:-all})"
-            print_error "  Services processed: $services_processed"
-            print_error "  Services skipped: $services_skipped"
-            print_error "  Possible causes:"
-            print_error "    - Services missing container_name_base in registry"
-            print_error "    - Port detection failed for all services"
-            print_error "    - Registry has no valid services configured"
+            print_error "Failed to generate upstream blocks for $service_name (domain: ${domain:-all})" >&2
+            print_error "  Services processed: $services_processed" >&2
+            print_error "  Services skipped: $services_skipped" >&2
+            print_error "  Possible causes:" >&2
+            print_error "    - Services missing container_name_base in registry" >&2
+            print_error "    - Port detection failed for all services" >&2
+            print_error "    - Registry has no valid services configured" >&2
         fi
     fi
     
+    # Only output upstream blocks to stdout (no error messages)
     echo "$upstream_blocks"
 }
 
