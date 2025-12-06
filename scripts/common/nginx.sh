@@ -390,15 +390,34 @@ test_service_nginx_config() {
     
     local config_file="${NGINX_PROJECT_DIR}/nginx/conf.d/${domain}.conf"
     
-    if [ ! -f "$config_file" ]; then
+    if [ ! -f "$config_file" ] && [ ! -L "$config_file" ]; then
         print_error "Config file not found: $config_file"
+        return 1
+    fi
+    
+    # Resolve symlink to actual file if it's a symlink
+    local actual_config_file="$config_file"
+    if [ -L "$config_file" ]; then
+        # Resolve symlink to absolute path
+        actual_config_file=$(readlink -f "$config_file" 2>/dev/null || readlink "$config_file" 2>/dev/null || echo "$config_file")
+        # If readlink returned relative path, make it absolute
+        if [ "${actual_config_file#/}" = "$actual_config_file" ]; then
+            # Relative path, resolve from config_dir
+            local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+            actual_config_file="${config_dir}/${actual_config_file}"
+        fi
+    fi
+    
+    if [ ! -f "$actual_config_file" ]; then
+        print_error "Config file (symlink target) not found: $actual_config_file (symlink: $config_file)"
         return 1
     fi
     
     # Validate config file syntax by checking basic structure
     # This is a lightweight check - full validation still requires nginx -t
-    if ! grep -q "^upstream " "$config_file" && ! grep -q "server 127.0.0.1:65535" "$config_file"; then
-        print_error "Config file appears to be invalid (no upstream blocks found): $config_file"
+    # Check the actual file, not the symlink
+    if ! grep -q "^upstream " "$actual_config_file" && ! grep -q "server 127.0.0.1:65535" "$actual_config_file"; then
+        print_error "Config file appears to be invalid (no upstream blocks found): $actual_config_file (symlink: $config_file)"
         return 1
     fi
     
