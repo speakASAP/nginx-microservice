@@ -55,14 +55,14 @@ These services depend only on infrastructure (nginx-network, database-server) an
 - **Host Port**: `${PORT:-3370}` (Blue, configured in `auth-microservice/.env`) / 3371 (Green), **Container Port**: `${PORT:-3370}`
 - **Health Endpoint**: `/health`
 
-#### payment-microservice
+#### payments-microservice
 
 - **Purpose**: Payment processing service
 - **Dependencies**: `nginx-network`, `db-server-postgres`
 - **Startup Order**: 5
 - **Shared Services**: `postgres`
-- **Container**: `payment-microservice-blue` / `payment-microservice-green`
-- **Host Port**: `${PORT_BLUE:-3369}` / `${PORT_GREEN:-3369}` (configured in `payment-microservice/.env`), **Container Port**: `${SERVICE_PORT:-3468}`
+- **Container**: `payments-microservice-blue` / `payments-microservice-green`
+- **Host Port**: `${PORT_BLUE:-3369}` / `${PORT_GREEN:-3369}` (configured in `payments-microservice/.env`), **Container Port**: `${SERVICE_PORT:-3468}`
 - **Health Endpoint**: `/health`
 
 #### notifications-microservice
@@ -133,7 +133,7 @@ These applications may depend on microservices and should be started after all m
 - **Health Endpoints**:
   - Frontend: `/`
   - API Gateway: `/health`
-- **May Depend On**: `payment-microservice`, `auth-microservice`
+- **May Depend On**: `payments-microservice`, `auth-microservice`
 
 ## Dependency Graph
 
@@ -154,7 +154,7 @@ These applications may depend on microservices and should be started after all m
            │                                          │                          │
            │                                          │                          │
 ┌──────────▼──────────┐                    ┌──────────▼──────────┐    ┌──────────▼──────────┐
-│ logging-microservice│                    │  auth-microservice  │    │ payment-microservice│
+│ logging-microservice│                    │  auth-microservice  │    │ payments-microservice│
 │ (No DB)             │                    │  (needs postgres)   │    │ (needs postgres)    │
 └─────────────────────┘                    └─────────────────────┘    └─────────────────────┘
            │                                          │                          │
@@ -209,7 +209,7 @@ These applications may depend on microservices and should be started after all m
 
 1. Start `logging-microservice` (no dependencies)
 2. Start `auth-microservice` (needs postgres)
-3. Start `payment-microservice` (needs postgres)
+3. Start `payments-microservice` (needs postgres)
 4. Start `notifications-microservice` (needs postgres + redis)
 5. Start `ai-microservice` (needs postgres + redis)
 

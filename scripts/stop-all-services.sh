@@ -63,7 +63,7 @@ APPLICATIONS=(
 
 MICROSERVICES=(
     "notifications-microservice"
-    "payment-microservice"
+    "payments-microservice"
     "auth-microservice"
     "logging-microservice"
     "ai-microservice"

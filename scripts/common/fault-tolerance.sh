@@ -53,7 +53,7 @@ is_microservice() {
         *-microservice)
             return 0
             ;;
-        auth-microservice|notifications-microservice|logging-microservice|payment-microservice)
+        auth-microservice|notifications-microservice|logging-microservice|payments-microservice)
             return 0
             ;;
         *)

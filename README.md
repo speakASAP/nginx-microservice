@@ -586,7 +586,7 @@ All services are now standardized and managed through the blue/green deployment 
 - **logging-microservice** - Centralized logging service
 - **nginx-microservice** - This reverse proxy service
 - **notifications-microservice** - Notification service
-- **payment-microservice** - Payment processing service
+- **payments-microservice** - Payment processing service
 
 #### Applications
 
@@ -640,7 +640,7 @@ All services have dependencies that must be respected when starting the system. 
 
 1. **Nginx** (Phase 1 - always runs): nginx-network → nginx-microservice
 2. **Infrastructure** (Phase 2): database-server (postgres + redis)
-3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payment-microservice → notifications-microservice → ai-microservice
+3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payments-microservice → notifications-microservice → ai-microservice
 4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → e-commerce
 
 **Fault Tolerance**:
