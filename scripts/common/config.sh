@@ -106,7 +106,12 @@ detect_container_port_from_compose() {
     
     # Use docker compose config to get normalized output
     if command -v docker >/dev/null 2>&1; then
-        local compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config 2>/dev/null || echo "")
+        # Use JSON format if jq is available, YAML if yq is available
+        local compose_format=""
+        if command -v jq >/dev/null 2>&1; then
+            compose_format="--format json"
+        fi
+        local compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config $compose_format 2>/dev/null || echo "")
         if [ -n "$compose_config" ]; then
             # Try to extract container port using yq (preferred for YAML parsing)
             if command -v yq >/dev/null 2>&1; then
@@ -119,8 +124,8 @@ detect_container_port_from_compose() {
                 container_port=$(echo "$compose_config" | yq eval ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" - 2>/dev/null | \
                     grep -oE '^[0-9]+' | head -1 || echo "")
             elif command -v jq >/dev/null 2>&1; then
-                # jq can parse YAML if available, handle all formats
-                container_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | \
+                # jq handles JSON format - ports are objects with "target" (container) and "published" (host)
+                container_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"object\" then .target elif type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else empty end" 2>/dev/null | \
                     grep -oE '^[0-9]+' | head -1 || echo "")
             else
                 # Fallback: use grep/sed - handle short-form, single-port, and long-form YAML
