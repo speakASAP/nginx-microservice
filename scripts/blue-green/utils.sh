@@ -383,13 +383,46 @@ auto_create_service_registry() {
                         fi
                     fi
                     
+                    # Detect health endpoint from docker-compose healthcheck
+                    local health_endpoint="/health"
+                    local healthcheck_found=false
+                    if [ -n "$compose_config" ]; then
+                        if command -v jq >/dev/null 2>&1; then
+                            # Extract healthcheck test command and find URL endpoint
+                            local healthcheck_test=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].healthcheck.test[]? // empty" 2>/dev/null | grep -E '^http://|^https://|^/' | head -1 || echo "")
+                            if [ -n "$healthcheck_test" ] && [ "$healthcheck_test" != "null" ]; then
+                                healthcheck_found=true
+                                # Extract path from URL (e.g., http://localhost:3000/ -> /)
+                                health_endpoint=$(echo "$healthcheck_test" | sed -E 's|^https?://[^/]+||' | sed 's|^/|/|' || echo "/")
+                                if [ -z "$health_endpoint" ] || [ "$health_endpoint" = "null" ]; then
+                                    health_endpoint="/"
+                                fi
+                            fi
+                        elif command -v yq >/dev/null 2>&1; then
+                            local healthcheck_test=$(echo "$compose_config" | yq eval ".services[\"${service_key}\"].healthcheck.test[]? // empty" - 2>/dev/null | grep -E '^http://|^https://|^/' | head -1 || echo "")
+                            if [ -n "$healthcheck_test" ] && [ "$healthcheck_test" != "null" ]; then
+                                healthcheck_found=true
+                                health_endpoint=$(echo "$healthcheck_test" | sed -E 's|^https?://[^/]+||' | sed 's|^/|/|' || echo "/")
+                                if [ -z "$health_endpoint" ] || [ "$health_endpoint" = "null" ]; then
+                                    health_endpoint="/"
+                                fi
+                            fi
+                        fi
+                    fi
+                    
+                    # Default frontend services to "/" only if healthcheck was not found
+                    # If healthcheck explicitly specifies "/health", we should respect that
+                    if [ "$service_key" = "frontend" ] && [ "$healthcheck_found" = false ]; then
+                        health_endpoint="/"
+                    fi
+                    
                     # Build service JSON (include container_port if detected)
                     local service_json="\"${service_key}\": {"
                     service_json="${service_json}\"container_name_base\": \"${container_name_base}\","
                     if [ -n "$detected_port" ] && [ "$detected_port" != "null" ]; then
                         service_json="${service_json}\"container_port\": ${detected_port},"
                     fi
-                    service_json="${service_json}\"health_endpoint\": \"/health\","
+                    service_json="${service_json}\"health_endpoint\": \"${health_endpoint}\","
                     service_json="${service_json}\"health_timeout\": 5,"
                     service_json="${service_json}\"health_retries\": 2,"
                     service_json="${service_json}\"startup_time\": 5"
