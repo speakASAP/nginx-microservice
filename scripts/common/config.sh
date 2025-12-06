@@ -549,13 +549,33 @@ generate_blue_green_configs() {
     local green_upstreams=$(generate_upstream_blocks "$service_name" "green" "$domain")
     
     # Check if upstream blocks were generated (must have at least one upstream block)
-    if [ -z "$blue_upstreams" ] || [ -z "$green_upstreams" ]; then
+    # Trim whitespace to catch cases where variable contains only spaces/newlines
+    local blue_upstreams_trimmed=$(echo "$blue_upstreams" | tr -d '[:space:]')
+    local green_upstreams_trimmed=$(echo "$green_upstreams" | tr -d '[:space:]')
+    
+    if [ -z "$blue_upstreams_trimmed" ] || [ -z "$green_upstreams_trimmed" ]; then
         print_error "Failed to generate upstream blocks for $service_name (domain: $domain)"
         print_error "This usually means:"
         print_error "  1. Registry file is missing or has no services defined"
         print_error "  2. Services in registry are missing 'container_name_base'"
         print_error "  3. Port detection failed for all services"
         print_error "Please check the registry file: ${REGISTRY_DIR}/${service_name}.json"
+        
+        # Try to provide more specific diagnostics
+        if type load_service_registry >/dev/null 2>&1; then
+            local registry=$(load_service_registry "$service_name" 2>/dev/null || echo "")
+            if [ -n "$registry" ]; then
+                local service_count=$(echo "$registry" | jq -r '.services | length // 0' 2>/dev/null || echo "0")
+                print_error "Registry file exists with $service_count service(s) defined"
+                
+                # Check if services have container_name_base
+                local services_with_base=$(echo "$registry" | jq -r '.services | to_entries[] | select(.value.container_name_base != null and .value.container_name_base != "") | .key' 2>/dev/null | wc -l || echo "0")
+                print_error "Services with container_name_base: $services_with_base"
+            else
+                print_error "Could not load registry file"
+            fi
+        fi
+        
         return 1
     fi
     
