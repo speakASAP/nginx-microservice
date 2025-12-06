@@ -176,12 +176,17 @@ container_is_healthy() {
 
 # Get all services from docker-compose file
 # First validate the compose file and capture any errors
-SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1)
+# Capture stdout (services) and stderr (warnings/errors) separately
+# Filter out warning messages that might appear in output
+SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -vE '^(time=|level=|msg=|WARN|The ".*" variable)' | grep -vE '^[[:space:]]*$')
 COMPOSE_EXIT_CODE=$?
 
+# Check for actual errors (non-zero exit code indicates failure)
 if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
+    # Capture error message separately
+    COMPOSE_ERROR=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1 1>/dev/null)
     log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to parse docker-compose file: $COMPOSE_FILE"
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $SERVICES"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $COMPOSE_ERROR"
     log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Current directory: $(pwd)"
     log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Compose file exists: $([ -f "$COMPOSE_FILE" ] && echo 'yes' || echo 'no')"
     exit 1
@@ -257,12 +262,16 @@ log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking for exis
 
 # Get all services from docker-compose file (second time for container checking)
 # Validate the compose file again
-SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1)
+# Capture stdout (services) and filter out warning messages that might appear in output
+SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null | grep -vE '^(time=|level=|msg=|WARN|The ".*" variable)' | grep -vE '^[[:space:]]*$')
 COMPOSE_EXIT_CODE=$?
 
+# Check for actual errors (non-zero exit code indicates failure)
 if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
+    # Capture error message separately
+    COMPOSE_ERROR=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1 1>/dev/null)
     log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to parse docker-compose file: $COMPOSE_FILE"
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $SERVICES"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $COMPOSE_ERROR"
     exit 1
 fi
 
