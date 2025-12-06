@@ -260,5 +260,47 @@ else
     log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Infrastructure is already running"
 fi
 
+# Ensure SSL certificate exists for the domain
+log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Checking SSL certificate for domain"
+
+# Get domain from registry
+DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
+
+if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
+    CERT_DIR="${NGINX_PROJECT_DIR}/certificates/${DOMAIN}"
+    FULLCHAIN="${CERT_DIR}/fullchain.pem"
+    PRIVKEY="${CERT_DIR}/privkey.pem"
+    
+    if [ ! -f "$FULLCHAIN" ] || [ ! -f "$PRIVKEY" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Certificate not found for domain: $DOMAIN"
+        log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Requesting certificate from Let's Encrypt..."
+        
+        # Get email from registry or use default
+        EMAIL=$(echo "$REGISTRY" | jq -r '.certbot_email // empty' 2>/dev/null)
+        if [ -z "$EMAIL" ] || [ "$EMAIL" = "null" ]; then
+            # Load .env file to get CERTBOT_EMAIL
+            if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+                set -a
+                source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+                set +a
+            fi
+            EMAIL="${CERTBOT_EMAIL:-admin@statex.cz}"
+        fi
+        
+        # Request certificate via certbot container
+        if docker compose -f "${NGINX_PROJECT_DIR}/docker-compose.yml" run --rm certbot /scripts/request-cert.sh "$DOMAIN" "$EMAIL"; then
+            log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate requested successfully for $DOMAIN"
+        else
+            log_message "ERROR" "$SERVICE_NAME" "infrastructure" "cert" "Failed to request certificate for $DOMAIN"
+            log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Certificate request failed. Deployment may fail if certificate is required."
+            log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "You can request certificate manually: docker compose run --rm certbot /scripts/request-cert.sh $DOMAIN $EMAIL"
+        fi
+    else
+        log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate exists for domain: $DOMAIN"
+    fi
+else
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "No domain configured in registry, skipping certificate check"
+fi
+
 exit 0
 
