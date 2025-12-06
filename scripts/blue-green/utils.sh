@@ -309,6 +309,9 @@ auto_create_service_registry() {
     # Keep hyphens in domain names (don't convert to underscores)
     local domain_base=$(echo "$service_name" | sed 's/-microservice$//')
     local domain="${domain_base}.statex.cz"
+    if [ "$service_name" = "statex" ]; then
+        domain="statex.cz"
+    fi
     
     # Auto-detect docker project base
     local docker_project_base=$(echo "$service_name" | tr '-' '_')
