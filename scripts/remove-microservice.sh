@@ -86,10 +86,22 @@ fi
 
 # Check if service registry exists
 REGISTRY_FILE="${REGISTRY_DIR}/${SERVICE_NAME}.json"
+STATE_FILE="${STATE_DIR}/${SERVICE_NAME}.json"
+
+# If registry doesn't exist, try to clean up state file and exit
 if [ ! -f "$REGISTRY_FILE" ]; then
-    print_error "Service registry not found: $REGISTRY_FILE"
+    print_warning "Service registry not found: $REGISTRY_FILE"
     print_info "The service '$SERVICE_NAME' does not exist in the registry."
-    exit 1
+    
+    # Still try to remove state file if it exists
+    if [ -f "$STATE_FILE" ]; then
+        print_info "Removing orphaned state file: $STATE_FILE"
+        rm -f "$STATE_FILE"
+        print_success "Removed orphaned state file"
+    fi
+    
+    print_info "Nothing else to remove for service '$SERVICE_NAME'."
+    exit 0
 fi
 
 # Load service registry
