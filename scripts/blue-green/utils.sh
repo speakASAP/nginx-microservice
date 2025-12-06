@@ -112,6 +112,151 @@ check_docker_compose_available() {
     return 0
 }
 
+# Function to update container_port in registry from docker-compose.yml
+update_registry_ports() {
+    local service_name="$1"
+    local registry_file="${REGISTRY_DIR}/${service_name}.json"
+    
+    if [ ! -f "$registry_file" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-ports" "Registry file not found, skipping port update"
+        return 1
+    fi
+    
+    local registry=$(load_service_registry "$service_name")
+    local service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    
+    if [ -z "$service_keys" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-ports" "No services found in registry"
+        return 0
+    fi
+    
+    local updated_count=0
+    local skipped_count=0
+    local temp_file=$(mktemp)
+    
+    # Load current registry JSON
+    if ! cp "$registry_file" "$temp_file"; then
+        log_message "ERROR" "$service_name" "deploy" "update-ports" "Failed to create temporary file"
+        return 1
+    fi
+    
+    while IFS= read -r service_key; do
+        local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+        if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
+            skipped_count=$((skipped_count + 1))
+            continue
+        fi
+        
+        # Check if container_port already exists
+        local existing_port=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_port // empty" 2>/dev/null)
+        
+        # Detect port from docker-compose.yml
+        local detected_port=""
+        if type detect_container_port_from_compose >/dev/null 2>&1; then
+            detected_port=$(detect_container_port_from_compose "$service_name" "$service_key" "$container_base" 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$detected_port" ] || [ "$detected_port" = "null" ]; then
+            if [ -z "$existing_port" ] || [ "$existing_port" = "null" ]; then
+                log_message "WARNING" "$service_name" "deploy" "update-ports" "Could not detect container_port for $service_key, skipping"
+                skipped_count=$((skipped_count + 1))
+            else
+                log_message "INFO" "$service_name" "deploy" "update-ports" "Keeping existing container_port=$existing_port for $service_key"
+            fi
+            continue
+        fi
+        
+        # Update container_port in JSON
+        if command -v jq >/dev/null 2>&1; then
+            if ! jq ".services[\"$service_key\"].container_port = $detected_port" "$temp_file" > "${temp_file}.new" 2>/dev/null; then
+                log_message "WARNING" "$service_name" "deploy" "update-ports" "Failed to update container_port for $service_key"
+                rm -f "${temp_file}.new"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+            mv "${temp_file}.new" "$temp_file"
+        elif command -v python3 >/dev/null 2>&1; then
+            # Fallback to python3 for JSON manipulation
+            # Use proper JSON encoding to prevent code injection
+            # Pass variables via environment variables for safety
+            if ! SERVICE_KEY_JSON=$(echo "$service_key" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null) || \
+               ! TEMP_FILE_JSON=$(echo "$temp_file" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null) || \
+               ! python3 -c "
+import json
+import os
+import sys
+
+# Read variables from environment (safely passed)
+service_key = json.loads(os.environ.get('SERVICE_KEY_JSON', 'null'))
+temp_file = json.loads(os.environ.get('TEMP_FILE_JSON', 'null'))
+detected_port = int(os.environ.get('DETECTED_PORT', '0'))
+
+if not service_key or not temp_file or detected_port <= 0:
+    sys.exit(1)
+
+try:
+    with open(temp_file, 'r') as f:
+        data = json.load(f)
+    data['services'][service_key]['container_port'] = detected_port
+    with open(temp_file, 'w') as f:
+        json.dump(data, f, indent=2)
+except (KeyError, ValueError, IOError, json.JSONDecodeError):
+    sys.exit(1)
+" \
+                SERVICE_KEY_JSON="$SERVICE_KEY_JSON" \
+                TEMP_FILE_JSON="$TEMP_FILE_JSON" \
+                DETECTED_PORT="$detected_port" \
+                2>/dev/null; then
+                log_message "WARNING" "$service_name" "deploy" "update-ports" "Failed to update container_port for $service_key"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+        else
+            log_message "ERROR" "$service_name" "deploy" "update-ports" "Neither jq nor python3 found. Cannot update registry."
+            rm -f "$temp_file"
+            return 1
+        fi
+        
+        if [ "$existing_port" = "$detected_port" ]; then
+            log_message "INFO" "$service_name" "deploy" "update-ports" "container_port=$detected_port already set for $service_key"
+        else
+            log_message "SUCCESS" "$service_name" "deploy" "update-ports" "Updated container_port=$detected_port for $service_key (was: ${existing_port:-not set})"
+            updated_count=$((updated_count + 1))
+        fi
+    done <<< "$service_keys"
+    
+    # Validate JSON before writing
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq empty "$temp_file" 2>/dev/null; then
+            log_message "ERROR" "$service_name" "deploy" "update-ports" "Generated invalid JSON"
+            rm -f "$temp_file"
+            return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        if ! python3 -m json.tool "$temp_file" >/dev/null 2>&1; then
+            log_message "ERROR" "$service_name" "deploy" "update-ports" "Generated invalid JSON"
+            rm -f "$temp_file"
+            return 1
+        fi
+    fi
+    
+    # Write updated registry back
+    if [ $updated_count -gt 0 ] || [ $skipped_count -eq 0 ]; then
+        if ! mv "$temp_file" "$registry_file"; then
+            log_message "ERROR" "$service_name" "deploy" "update-ports" "Failed to write updated registry"
+            rm -f "$temp_file"
+            return 1
+        fi
+        if [ $updated_count -gt 0 ]; then
+            log_message "SUCCESS" "$service_name" "deploy" "update-ports" "Registry updated: $updated_count service(s) updated"
+        fi
+    else
+        rm -f "$temp_file"
+    fi
+    
+    return 0
+}
+
 # Function to auto-create service registry from service directory
 # This is called when registry file doesn't exist during deployment
 auto_create_service_registry() {
@@ -204,9 +349,36 @@ auto_create_service_registry() {
                         fi
                     fi
                     
-                    # Build service JSON (port will be auto-detected, so we don't include it)
+                    # Detect container_port from docker-compose.yml
+                    local detected_port=""
+                    if [ -n "$compose_config" ]; then
+                        # Try to extract port using the same logic as detect_container_port_from_compose
+                        if command -v yq >/dev/null 2>&1; then
+                            detected_port=$(echo "$compose_config" | yq eval ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" - 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                        elif command -v jq >/dev/null 2>&1; then
+                            detected_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                        fi
+                        
+                        # Fallback: try .env file
+                        if [ -z "$detected_port" ] && [ -f "${service_path}/.env" ]; then
+                            local service_key_upper="${service_key^^}"
+                            local container_base_upper="${container_name_base^^}"
+                            detected_port=$(grep -F "SERVICE_PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                            if [ -z "$detected_port" ]; then
+                                detected_port=$(grep -F "${container_base_upper}_PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                            fi
+                            if [ -z "$detected_port" ]; then
+                                detected_port=$(grep -E "^PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                            fi
+                        fi
+                    fi
+                    
+                    # Build service JSON (include container_port if detected)
                     local service_json="\"${service_key}\": {"
                     service_json="${service_json}\"container_name_base\": \"${container_name_base}\","
+                    if [ -n "$detected_port" ] && [ "$detected_port" != "null" ]; then
+                        service_json="${service_json}\"container_port\": ${detected_port},"
+                    fi
                     service_json="${service_json}\"health_endpoint\": \"/health\","
                     service_json="${service_json}\"health_timeout\": 5,"
                     service_json="${service_json}\"health_retries\": 2,"
@@ -226,8 +398,40 @@ auto_create_service_registry() {
     
     # If no services found, create a default backend service
     if [ -z "$services_json" ]; then
+        # Try to detect port for default backend service
+        local detected_port=""
+        if [ -n "$compose_config" ] && type detect_container_port_from_compose >/dev/null 2>&1; then
+            # Try to detect from first service in compose or from .env
+            if command -v yq >/dev/null 2>&1; then
+                local first_service=$(echo "$compose_config" | yq eval '.services | keys | .[0]' - 2>/dev/null || echo "")
+                if [ -n "$first_service" ] && [ "$first_service" != "null" ]; then
+                    detected_port=$(echo "$compose_config" | yq eval ".services[\"${first_service}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" - 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                fi
+            elif command -v jq >/dev/null 2>&1; then
+                local first_service=$(echo "$compose_config" | jq -r '.services | keys[0]' 2>/dev/null || echo "")
+                if [ -n "$first_service" ] && [ "$first_service" != "null" ]; then
+                    detected_port=$(echo "$compose_config" | jq -r ".services[\"${first_service}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                fi
+            fi
+            
+            # Fallback: try .env file
+            if [ -z "$detected_port" ] && [ -f "${service_path}/.env" ]; then
+                detected_port=$(grep -F "SERVICE_PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                if [ -z "$detected_port" ]; then
+                    local service_name_upper=$(echo "$service_name" | tr '[:lower:]' '[:upper:]' | tr '-' '_')
+                    detected_port=$(grep -F "${service_name_upper}_PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                fi
+                if [ -z "$detected_port" ]; then
+                    detected_port=$(grep -E "^PORT=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+                fi
+            fi
+        fi
+        
         services_json="\"backend\": {"
         services_json="${services_json}\"container_name_base\": \"${service_name}\","
+        if [ -n "$detected_port" ] && [ "$detected_port" != "null" ]; then
+            services_json="${services_json}\"container_port\": ${detected_port},"
+        fi
         services_json="${services_json}\"health_endpoint\": \"/health\","
         services_json="${services_json}\"health_timeout\": 5,"
         services_json="${services_json}\"health_retries\": 2,"

@@ -79,6 +79,8 @@ PROJECT_NAME="${DOCKER_PROJECT_BASE}_${INACTIVE_COLOR}"
 # Check if project has any containers before attempting cleanup
 # This prevents the "No resource found to remove" warning
 HAS_CONTAINERS=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" ps -q 2>/dev/null | grep -c . || echo "0")
+# Trim whitespace and ensure it's a valid integer
+HAS_CONTAINERS=$(echo "$HAS_CONTAINERS" | tr -d '[:space:]' | grep -E '^[0-9]+$' || echo "0")
 
 if [ "$HAS_CONTAINERS" -gt 0 ]; then
     # Stop and remove containers

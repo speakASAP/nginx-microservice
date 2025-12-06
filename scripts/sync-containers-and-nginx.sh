@@ -32,6 +32,14 @@ else
     exit 1
 fi
 
+# Source config functions for port detection
+if [ -f "${SCRIPT_DIR}/common/config.sh" ]; then
+    source "${SCRIPT_DIR}/common/config.sh"
+else
+    echo -e "${RED}[ERROR]${NC} config.sh not found"
+    exit 1
+fi
+
 # Print functions are now available from utils.sh (via output.sh module)
 # No need to redefine them
 
@@ -158,6 +166,151 @@ ensure_service_containers_running() {
     fi
 }
 
+# Function to update container_port in registry from docker-compose.yml
+update_registry_ports() {
+    local service_name="$1"
+    local registry_file="${REGISTRY_DIR}/${service_name}.json"
+    
+    if [ ! -f "$registry_file" ]; then
+        print_warning "Registry file not found for $service_name, skipping port update"
+        return 1
+    fi
+    
+    local registry=$(load_service_registry "$service_name")
+    local service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    
+    if [ -z "$service_keys" ]; then
+        print_warning "No services found in registry for $service_name"
+        return 0
+    fi
+    
+    local updated_count=0
+    local skipped_count=0
+    local temp_file=$(mktemp)
+    
+    # Load current registry JSON
+    if ! cp "$registry_file" "$temp_file"; then
+        print_error "Failed to create temporary file for $service_name"
+        return 1
+    fi
+    
+    while IFS= read -r service_key; do
+        local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+        if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
+            skipped_count=$((skipped_count + 1))
+            continue
+        fi
+        
+        # Check if container_port already exists
+        local existing_port=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_port // empty" 2>/dev/null)
+        
+        # Detect port from docker-compose.yml
+        local detected_port=""
+        if type detect_container_port_from_compose >/dev/null 2>&1; then
+            detected_port=$(detect_container_port_from_compose "$service_name" "$service_key" "$container_base" 2>/dev/null || echo "")
+        fi
+        
+        if [ -z "$detected_port" ] || [ "$detected_port" = "null" ]; then
+            if [ -z "$existing_port" ] || [ "$existing_port" = "null" ]; then
+                print_warning "Could not detect container_port for $service_name:$service_key, skipping"
+                skipped_count=$((skipped_count + 1))
+            else
+                print_status "Keeping existing container_port=$existing_port for $service_name:$service_key"
+            fi
+            continue
+        fi
+        
+        # Update container_port in JSON
+        if command -v jq >/dev/null 2>&1; then
+            if ! jq ".services[\"$service_key\"].container_port = $detected_port" "$temp_file" > "${temp_file}.new" 2>/dev/null; then
+                print_warning "Failed to update container_port for $service_name:$service_key"
+                rm -f "${temp_file}.new"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+            mv "${temp_file}.new" "$temp_file"
+        elif command -v python3 >/dev/null 2>&1; then
+            # Fallback to python3 for JSON manipulation
+            # Use proper JSON encoding to prevent code injection
+            # Pass variables via environment variables for safety
+            if ! SERVICE_KEY_JSON=$(echo "$service_key" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null) || \
+               ! TEMP_FILE_JSON=$(echo "$temp_file" | python3 -c "import sys, json; print(json.dumps(sys.stdin.read().strip()))" 2>/dev/null) || \
+               ! python3 -c "
+import json
+import os
+import sys
+
+# Read variables from environment (safely passed)
+service_key = json.loads(os.environ.get('SERVICE_KEY_JSON', 'null'))
+temp_file = json.loads(os.environ.get('TEMP_FILE_JSON', 'null'))
+detected_port = int(os.environ.get('DETECTED_PORT', '0'))
+
+if not service_key or not temp_file or detected_port <= 0:
+    sys.exit(1)
+
+try:
+    with open(temp_file, 'r') as f:
+        data = json.load(f)
+    data['services'][service_key]['container_port'] = detected_port
+    with open(temp_file, 'w') as f:
+        json.dump(data, f, indent=2)
+except (KeyError, ValueError, IOError, json.JSONDecodeError):
+    sys.exit(1)
+" \
+                SERVICE_KEY_JSON="$SERVICE_KEY_JSON" \
+                TEMP_FILE_JSON="$TEMP_FILE_JSON" \
+                DETECTED_PORT="$detected_port" \
+                2>/dev/null; then
+                print_warning "Failed to update container_port for $service_name:$service_key"
+                skipped_count=$((skipped_count + 1))
+                continue
+            fi
+        else
+            print_error "Neither jq nor python3 found. Cannot update registry."
+            rm -f "$temp_file"
+            return 1
+        fi
+        
+        if [ "$existing_port" = "$detected_port" ]; then
+            print_status "container_port=$detected_port already set for $service_name:$service_key"
+        else
+            print_success "Updated container_port=$detected_port for $service_name:$service_key (was: ${existing_port:-not set})"
+            updated_count=$((updated_count + 1))
+        fi
+    done <<< "$service_keys"
+    
+    # Validate JSON before writing
+    if command -v jq >/dev/null 2>&1; then
+        if ! jq empty "$temp_file" 2>/dev/null; then
+            print_error "Generated invalid JSON for $service_name"
+            rm -f "$temp_file"
+            return 1
+        fi
+    elif command -v python3 >/dev/null 2>&1; then
+        if ! python3 -m json.tool "$temp_file" >/dev/null 2>&1; then
+            print_error "Generated invalid JSON for $service_name"
+            rm -f "$temp_file"
+            return 1
+        fi
+    fi
+    
+    # Write updated registry back
+    if [ $updated_count -gt 0 ] || [ $skipped_count -eq 0 ]; then
+        if ! mv "$temp_file" "$registry_file"; then
+            print_error "Failed to write updated registry for $service_name"
+            rm -f "$temp_file"
+            return 1
+        fi
+        if [ $updated_count -gt 0 ]; then
+            print_success "Registry updated for $service_name: $updated_count service(s) updated"
+        fi
+    else
+        rm -f "$temp_file"
+    fi
+    
+    return 0
+}
+
 # Function to sync symlink for a service
 sync_service_symlink() {
     local service_name="$1"
@@ -263,6 +416,28 @@ if [ ${#SERVICES[@]} -eq 0 ]; then
 fi
 
 print_status "Found ${#SERVICES[@]} service(s) to sync"
+print_status ""
+
+# Update container_port values in all registries
+print_status "=========================================="
+print_status "Updating container_port in Service Registries"
+print_status "=========================================="
+print_status ""
+
+UPDATED_REGISTRIES=0
+for service_name in "${SERVICES[@]}"; do
+    if update_registry_ports "$service_name"; then
+        UPDATED_REGISTRIES=$((UPDATED_REGISTRIES + 1))
+    fi
+done
+
+print_status "Updated container_port in $UPDATED_REGISTRIES registry file(s)"
+print_status ""
+
+# Now sync each service
+print_status "=========================================="
+print_status "Syncing Service Configurations"
+print_status "=========================================="
 print_status ""
 
 # Sync each service

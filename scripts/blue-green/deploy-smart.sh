@@ -38,6 +38,14 @@ else
     log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Service validated in registry"
 fi
 
+# Update container_port values in registry from docker-compose.yml
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating container_port values in registry from docker-compose.yml"
+
+if ! update_registry_ports "$SERVICE_NAME"; then
+    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Failed to update container_port in registry, continuing with deployment"
+    # Don't exit - deployment can continue with existing or auto-detected ports
+fi
+
 # Pre-deployment: Check for restarting containers and port conflicts
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
 
