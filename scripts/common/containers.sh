@@ -25,11 +25,13 @@ fi
 # Note: log_message will be available from utils.sh when modules are sourced together
 
 # Function to check if a port is in use and kill the process/container using it
-# Usage: kill_port_if_in_use <port> [service_name] [color]
+# Usage: kill_port_if_in_use <port> [service_name] [color] [exclude_container]
+# exclude_container: container name to exclude from being killed (e.g., active color container)
 kill_port_if_in_use() {
     local port="$1"
     local service_name="${2:-}"
     local color="${3:-}"
+    local exclude_container="${4:-}"
     
     if [ -z "$port" ] || ! [[ "$port" =~ ^[0-9]+$ ]]; then
         return 0  # Invalid port, skip
@@ -41,20 +43,41 @@ kill_port_if_in_use() {
         awk '{print $1}' | head -1 || echo "")
     
     if [ -n "$container_using_port" ]; then
-        if [ -n "$service_name" ]; then
-            if type log_message >/dev/null 2>&1; then
-                log_message "WARNING" "$service_name" "$color" "port-check" "Port ${port} is in use by container ${container_using_port}, stopping and removing it"
+        # Skip if this is the excluded container (e.g., active color serving traffic)
+        if [ -n "$exclude_container" ] && [ "$container_using_port" = "$exclude_container" ]; then
+            if [ -n "$service_name" ]; then
+                if type log_message >/dev/null 2>&1; then
+                    log_message "INFO" "$service_name" "$color" "port-check" "Port ${port} is in use by active container ${container_using_port}, skipping (serving traffic)"
+                fi
             fi
-        else
-            print_warning "Port ${port} is in use by container ${container_using_port}, stopping and removing it"
+            return 0
         fi
-        # Force stop and remove, even if it's restarting
-        docker stop "${container_using_port}" 2>/dev/null || true
-        sleep 1
-        docker kill "${container_using_port}" 2>/dev/null || true
-        sleep 1
-        docker rm -f "${container_using_port}" 2>/dev/null || true
-        sleep 1  # Give it a moment to release the port
+        
+        # Check if container is restarting (only kill restarting containers, not healthy running ones)
+        local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${container_using_port}" | awk '{print $2}' || echo "")
+        if [ -n "$status" ] && echo "$status" | grep -qE "Restarting"; then
+            if [ -n "$service_name" ]; then
+                if type log_message >/dev/null 2>&1; then
+                    log_message "WARNING" "$service_name" "$color" "port-check" "Port ${port} is in use by restarting container ${container_using_port}, stopping and removing it"
+                fi
+            else
+                print_warning "Port ${port} is in use by restarting container ${container_using_port}, stopping and removing it"
+            fi
+            # Force stop and remove
+            docker stop "${container_using_port}" 2>/dev/null || true
+            sleep 1
+            docker kill "${container_using_port}" 2>/dev/null || true
+            sleep 1
+            docker rm -f "${container_using_port}" 2>/dev/null || true
+            sleep 1  # Give it a moment to release the port
+        else
+            # Container is healthy and running - don't kill it
+            if [ -n "$service_name" ]; then
+                if type log_message >/dev/null 2>&1; then
+                    log_message "INFO" "$service_name" "$color" "port-check" "Port ${port} is in use by healthy container ${container_using_port}, skipping"
+                fi
+            fi
+        fi
     fi
     
     # Check if a host process is using this port (using lsof, netstat, or ss)
@@ -106,7 +129,8 @@ kill_container_if_exists() {
         # Check if it's in a restart loop
         local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${container_name}" | awk '{print $2}' || echo "")
         
-        if [ -n "$status" ] && echo "$status" | grep -qE "Restarting|Up"; then
+        # Only kill containers that are restarting (not healthy running ones)
+        if [ -n "$status" ] && echo "$status" | grep -qE "Restarting"; then
             if [ -n "$service_name" ]; then
                 if type log_message >/dev/null 2>&1; then
                     log_message "WARNING" "$service_name" "$color" "container-check" "Container ${container_name} is ${status}, stopping and removing it"

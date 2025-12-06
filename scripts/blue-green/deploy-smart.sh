@@ -45,7 +45,15 @@ log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking f
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
 SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
 
-# Check for restarting containers and kill them
+# Load state to determine active color (don't kill active container serving traffic)
+DOMAIN=""
+if [ "$SERVICE_NAME" = "statex" ]; then
+    DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
+fi
+STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
+ACTIVE_COLOR=$(echo "$STATE" | jq -r '.active_color')
+
+# Check for restarting containers and kill them (but skip active color serving traffic)
 if [ -n "$SERVICE_KEYS" ]; then
     while IFS= read -r service_key; do
         CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
@@ -53,15 +61,24 @@ if [ -n "$SERVICE_KEYS" ]; then
         if [ -n "$CONTAINER_BASE" ] && [ "$CONTAINER_BASE" != "null" ]; then
             # Get container port with auto-detection
             PORT=$(get_container_port "$SERVICE_NAME" "$service_key" "$CONTAINER_BASE")
-            # Check for blue and green containers
+            
+            # Determine active container name
+            ACTIVE_CONTAINER="${CONTAINER_BASE}-${ACTIVE_COLOR}"
+            
+            # Check for restarting containers (only kill restarting ones, skip active color serving traffic)
             if type kill_container_if_exists >/dev/null 2>&1; then
-                kill_container_if_exists "${CONTAINER_BASE}-blue" "$SERVICE_NAME" "pre-deploy"
-                kill_container_if_exists "${CONTAINER_BASE}-green" "$SERVICE_NAME" "pre-deploy"
+                # Only kill if not the active container
+                if [ "${CONTAINER_BASE}-blue" != "$ACTIVE_CONTAINER" ]; then
+                    kill_container_if_exists "${CONTAINER_BASE}-blue" "$SERVICE_NAME" "pre-deploy"
+                fi
+                if [ "${CONTAINER_BASE}-green" != "$ACTIVE_CONTAINER" ]; then
+                    kill_container_if_exists "${CONTAINER_BASE}-green" "$SERVICE_NAME" "pre-deploy"
+                fi
             fi
             
-            # Check for port conflicts if port is specified
+            # Check for port conflicts if port is specified (exclude active container)
             if [ -n "$PORT" ] && [ "$PORT" != "null" ] && type kill_port_if_in_use >/dev/null 2>&1; then
-                kill_port_if_in_use "$PORT" "$SERVICE_NAME" "pre-deploy"
+                kill_port_if_in_use "$PORT" "$SERVICE_NAME" "pre-deploy" "$ACTIVE_CONTAINER"
             fi
         fi
     done <<< "$SERVICE_KEYS"
