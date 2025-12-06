@@ -342,6 +342,51 @@ while IFS= read -r service; do
     fi
 done <<< "$SERVICES"
 
+# Create volume directories before starting containers
+log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Ensuring volume directories exist with proper permissions"
+
+# Load .env file if it exists to resolve variables
+if [ -f "$ACTUAL_PATH/.env" ]; then
+    set -a
+    source "$ACTUAL_PATH/.env" 2>/dev/null || true
+    set +a
+fi
+
+# Extract volume paths from docker-compose config (after env vars are loaded)
+# Use docker compose config to get resolved paths
+RESOLVED_CONFIG=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null || echo "")
+
+if [ -n "$RESOLVED_CONFIG" ]; then
+    # Extract volume mount paths (host:container format)
+    echo "$RESOLVED_CONFIG" | grep -E "^\s+-.*:" | grep -v "ports:" | while IFS= read -r volume_line; do
+        # Extract host path (before the colon)
+        host_path=$(echo "$volume_line" | sed -E 's/^\s+-[[:space:]]*"([^"]+):[^"]+".*/\1/' | sed -E "s/^\s+-[[:space:]]*([^:]+):[^:]+.*/\1/" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | cut -d: -f1)
+        
+        # Only process absolute paths
+        if [ -n "$host_path" ] && echo "$host_path" | grep -qE '^/'; then
+            # Skip if path still contains unresolved variables
+            if echo "$host_path" | grep -qE '\$\{|%'; then
+                continue
+            fi
+            
+            # Create directory if it doesn't exist
+            if [ ! -d "$host_path" ]; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Creating volume directory: $host_path"
+                mkdir -p "$host_path" 2>/dev/null || {
+                    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to create directory $host_path, will try to continue"
+                }
+            fi
+            
+            # Set permissions (755 for directories)
+            if [ -d "$host_path" ]; then
+                chmod 755 "$host_path" 2>/dev/null || {
+                    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to set permissions on $host_path (may be on network filesystem)"
+                }
+            fi
+        fi
+    done
+fi
+
 # Start/restart containers
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Starting containers for $PREPARE_COLOR"
 
