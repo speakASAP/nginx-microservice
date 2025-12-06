@@ -141,8 +141,24 @@ if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
     # Get HTTPS check configuration from registry (optional)
     HTTPS_TIMEOUT=$(echo "$REGISTRY" | jq -r '.https_check_timeout // 5' 2>/dev/null)
     HTTPS_RETRIES=$(echo "$REGISTRY" | jq -r '.https_check_retries // 2' 2>/dev/null)
-    HTTPS_ENDPOINT=$(echo "$REGISTRY" | jq -r '.https_check_endpoint // "/"' 2>/dev/null)
+    HTTPS_ENDPOINT=$(echo "$REGISTRY" | jq -r '.https_check_endpoint // empty' 2>/dev/null)
     HTTPS_ENABLED=$(echo "$REGISTRY" | jq -r '.https_check_enabled // true' 2>/dev/null)
+    
+    # Auto-detect endpoint for backend-only services
+    if [ -z "$HTTPS_ENDPOINT" ] || [ "$HTTPS_ENDPOINT" = "null" ]; then
+        # Check if service has frontend
+        HAS_FRONTEND=$(echo "$REGISTRY" | jq -r '.services.frontend // empty' 2>/dev/null)
+        HAS_BACKEND=$(echo "$REGISTRY" | jq -r '.services.backend // empty' 2>/dev/null)
+        
+        # If backend-only (no frontend), use /health endpoint
+        if [ -n "$HAS_BACKEND" ] && [ "$HAS_BACKEND" != "null" ] && ([ -z "$HAS_FRONTEND" ] || [ "$HAS_FRONTEND" = "null" ]); then
+            HTTPS_ENDPOINT="/health"
+            log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Auto-detected backend-only service, using /health endpoint for HTTPS check"
+        else
+            # Default to root for services with frontend
+            HTTPS_ENDPOINT="/"
+        fi
+    fi
     
     # Only check if enabled (default: true)
     if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then

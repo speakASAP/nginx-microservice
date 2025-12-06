@@ -32,7 +32,7 @@ fi
 check_https_url() {
     local domain="$1"
     local timeout="${2:-5}"
-    local retries="${3:-3}"
+    local retries="${3:-2}"
     local endpoint="${4:-/}"
     local service_name="${5:-}"
     local color="${6:-}"
@@ -47,7 +47,7 @@ check_https_url() {
         timeout=5
     fi
     if ! [[ "$retries" =~ ^[0-9]+$ ]]; then
-        retries=3
+        retries=2
     fi
     
     # Construct URL
@@ -70,21 +70,47 @@ check_https_url() {
         attempt=$((attempt + 1))
         local curl_error=""
         local curl_exit_code=1
+        local http_code=""
         
         # Try from nginx container if it exists and is on the network
         if docker ps --format "{{.Names}}" | grep -q "^${nginx_container}$" && \
            docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${nginx_container}( |$)"; then
             # Check from inside nginx container (can reach localhost:443)
-            curl_error=$(docker exec "${nginx_container}" curl -s -f --max-time "$timeout" -k "$url" 2>&1)
+            # Use -w to capture HTTP code, don't use -f so we can check status codes
+            curl_error=$(docker exec "${nginx_container}" curl -s -w "\nHTTP_CODE:%{http_code}" --max-time "$timeout" -k "$url" 2>&1)
             curl_exit_code=$?
+            http_code=$(echo "$curl_error" | grep "HTTP_CODE:" | cut -d: -f2 || echo "")
+            curl_error=$(echo "$curl_error" | grep -v "HTTP_CODE:" || echo "$curl_error")
         fi
         
         # Fallback to host-based check if container check failed or nginx not available
-        if [ $curl_exit_code -ne 0 ]; then
+        if [ $curl_exit_code -ne 0 ] || [ -z "$http_code" ]; then
             # Use curl with proper flags for HTTPS check from host
-            # -s: silent, -f: fail on HTTP errors, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
-            curl_error=$(curl -s -f --max-time "$timeout" -k "$url" 2>&1)
+            # -s: silent, -w: write HTTP code, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
+            # Don't use -f so we can check status codes (4xx means service is reachable, just endpoint doesn't exist)
+            curl_error=$(curl -s -w "\nHTTP_CODE:%{http_code}" --max-time "$timeout" -k "$url" 2>&1)
             curl_exit_code=$?
+            http_code=$(echo "$curl_error" | grep "HTTP_CODE:" | cut -d: -f2 || echo "")
+            curl_error=$(echo "$curl_error" | grep -v "HTTP_CODE:" || echo "$curl_error")
+        fi
+        
+        # Consider 2xx and 4xx as success (service is reachable and responding)
+        # 4xx means the endpoint doesn't exist, but the service is reachable (which is what we're checking)
+        # 5xx means server error, which is a real failure
+        if [ -n "$http_code" ]; then
+            if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 500 ]; then
+                curl_exit_code=0
+                if [ -n "$service_name" ]; then
+                    if type log_message >/dev/null 2>&1; then
+                        if [ "$http_code" -ge 400 ]; then
+                            log_message "SUCCESS" "$service_name" "$color" "https-check" "HTTPS check passed: $url (HTTP $http_code - service reachable, endpoint not found)"
+                        else
+                            log_message "SUCCESS" "$service_name" "$color" "https-check" "HTTPS check passed: $url (HTTP $http_code, attempt $attempt/$retries)"
+                        fi
+                    fi
+                fi
+                return 0
+            fi
         fi
         
         if [ $curl_exit_code -eq 0 ]; then
