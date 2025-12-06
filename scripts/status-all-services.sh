@@ -466,7 +466,7 @@ format_dashboard_status() {
         eval "$icon_var='${GREEN_CHECK}'"
         eval "$status_text_var='HEALTHY'"
     elif echo "$status" | grep -qE "Up"; then
-        eval "$icon_var='${YELLOW}⚠${NC}'"
+        eval "$icon_var='${GREEN_CHECK}'"
         eval "$status_text_var='RUNNING'"
     else
         eval "$icon_var='${RED_X}'"
