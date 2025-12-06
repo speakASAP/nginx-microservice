@@ -65,7 +65,11 @@ check_https_url() {
         attempt=$((attempt + 1))
         # Use curl with proper flags for HTTPS check
         # -s: silent, -f: fail on HTTP errors, --max-time: timeout, -k: allow insecure (for self-signed certs during dev)
-        if curl -s -f --max-time "$timeout" -k "$url" >/dev/null 2>&1; then
+        local curl_error=""
+        curl_error=$(curl -s -f --max-time "$timeout" -k "$url" 2>&1)
+        local curl_exit_code=$?
+        
+        if [ $curl_exit_code -eq 0 ]; then
             if [ -n "$service_name" ]; then
                 if type log_message >/dev/null 2>&1; then
                     log_message "SUCCESS" "$service_name" "$color" "https-check" "HTTPS check passed: $url (attempt $attempt/$retries)"
@@ -73,6 +77,14 @@ check_https_url() {
             fi
             return 0
         fi
+        
+        # Log error on final attempt for diagnostics
+        if [ $attempt -eq $retries ] && [ -n "$service_name" ]; then
+            if type log_message >/dev/null 2>&1; then
+                log_message "WARNING" "$service_name" "$color" "https-check" "HTTPS check attempt $attempt/$retries failed: ${curl_error:-connection timeout or refused}"
+            fi
+        fi
+        
         if [ $attempt -lt $retries ]; then
             sleep 1
         fi
