@@ -362,9 +362,11 @@ auto_create_service_registry() {
                     if [ -n "$compose_config" ]; then
                         # Try to extract port using the same logic as detect_container_port_from_compose
                         if command -v yq >/dev/null 2>&1; then
+                            # yq handles YAML format - ports can be string "HOST:CONTAINER" or number
                             detected_port=$(echo "$compose_config" | yq eval ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" - 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
                         elif command -v jq >/dev/null 2>&1; then
-                            detected_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                            # jq handles JSON format - ports are objects with "target" (container) and "published" (host)
+                            detected_port=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].ports[]? | select(. != null) | if type == \"object\" then .target elif type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else empty end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
                         fi
                         
                         # Fallback: try .env file
@@ -418,7 +420,7 @@ auto_create_service_registry() {
             elif command -v jq >/dev/null 2>&1; then
                 local first_service=$(echo "$compose_config" | jq -r '.services | keys[0]' 2>/dev/null || echo "")
                 if [ -n "$first_service" ] && [ "$first_service" != "null" ]; then
-                    detected_port=$(echo "$compose_config" | jq -r ".services[\"${first_service}\"].ports[]? | select(. != null) | if type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else .target end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
+                    detected_port=$(echo "$compose_config" | jq -r ".services[\"${first_service}\"].ports[]? | select(. != null) | if type == \"object\" then .target elif type == \"string\" then (if contains(\":\") then (split(\":\") | .[1]) else . end) elif type == \"number\" then . else empty end" 2>/dev/null | grep -oE '^[0-9]+' | head -1 || echo "")
                 fi
             fi
             
