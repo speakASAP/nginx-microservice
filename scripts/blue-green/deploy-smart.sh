@@ -142,7 +142,7 @@ if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
     # Only check if enabled (default: true)
     if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then
         # Get active color from state - for statex service, get domain from registry
-        DOMAIN=""
+        # Note: DOMAIN is already set above for non-statex services, only reset for statex
         if [ "$SERVICE_NAME" = "statex" ]; then
             REGISTRY=$(load_service_registry "$SERVICE_NAME")
             DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
