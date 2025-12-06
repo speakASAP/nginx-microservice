@@ -255,19 +255,38 @@ generate_upstream_blocks() {
             service_keys="$domain_services"
         else
             # Fallback to all services
-            service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+            service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
         fi
     else
         # Use all services
-        service_keys=$(echo "$registry" | jq -r '.services | keys[]')
+        service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    fi
+    
+    # Check if any services were found
+    if [ -z "$service_keys" ]; then
+        if type print_warning >/dev/null 2>&1; then
+            print_warning "No services found in registry for $service_name (domain: ${domain:-all}) - cannot generate upstream blocks"
+        fi
+        echo ""
+        return 0
     fi
     
     local upstream_blocks=""
+    local services_processed=0
+    local services_skipped=0
     
     while IFS= read -r service_key; do
-        local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base")
+        if [ -z "$service_key" ]; then
+            continue
+        fi
+        services_processed=$((services_processed + 1))
+        local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
         
         if [ -z "$container_base" ] || [ "$container_base" = "null" ]; then
+            services_skipped=$((services_skipped + 1))
+            if type print_warning >/dev/null 2>&1; then
+                print_warning "container_name_base not found for service $service_key in $service_name - skipping upstream block"
+            fi
             continue
         fi
         
@@ -276,8 +295,9 @@ generate_upstream_blocks() {
         
         # Skip if still no port found
         if [ -z "$service_port" ] || [ "$service_port" = "null" ]; then
+            services_skipped=$((services_skipped + 1))
             if type print_warning >/dev/null 2>&1; then
-                print_warning "Port not found for $service_key in $service_name - skipping upstream block"
+                print_warning "Port not found for $service_key in $service_name (container_base: $container_base) - skipping upstream block"
             fi
             continue
         fi
@@ -338,6 +358,19 @@ generate_upstream_blocks() {
         upstream_blocks="${upstream_blocks}}
 "
     done <<< "$service_keys"
+    
+    # Warn if no upstream blocks were generated
+    if [ -z "$upstream_blocks" ]; then
+        if type print_error >/dev/null 2>&1; then
+            print_error "Failed to generate upstream blocks for $service_name (domain: ${domain:-all})"
+            print_error "  Services processed: $services_processed"
+            print_error "  Services skipped: $services_skipped"
+            print_error "  Possible causes:"
+            print_error "    - Services missing container_name_base in registry"
+            print_error "    - Port detection failed for all services"
+            print_error "    - Registry has no valid services configured"
+        fi
+    fi
     
     echo "$upstream_blocks"
 }
@@ -514,6 +547,17 @@ generate_blue_green_configs() {
     # Function signature: generate_upstream_blocks service_name active_color domain
     local blue_upstreams=$(generate_upstream_blocks "$service_name" "blue" "$domain")
     local green_upstreams=$(generate_upstream_blocks "$service_name" "green" "$domain")
+    
+    # Check if upstream blocks were generated (must have at least one upstream block)
+    if [ -z "$blue_upstreams" ] || [ -z "$green_upstreams" ]; then
+        print_error "Failed to generate upstream blocks for $service_name (domain: $domain)"
+        print_error "This usually means:"
+        print_error "  1. Registry file is missing or has no services defined"
+        print_error "  2. Services in registry are missing 'container_name_base'"
+        print_error "  3. Port detection failed for all services"
+        print_error "Please check the registry file: ${REGISTRY_DIR}/${service_name}.json"
+        return 1
+    fi
     
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
