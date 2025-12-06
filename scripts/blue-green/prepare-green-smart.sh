@@ -157,10 +157,21 @@ container_is_healthy() {
 }
 
 # Get all services from docker-compose file
-SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "")
+# First validate the compose file and capture any errors
+SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1)
+COMPOSE_EXIT_CODE=$?
+
+if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to parse docker-compose file: $COMPOSE_FILE"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $SERVICES"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Current directory: $(pwd)"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Compose file exists: $([ -f "$COMPOSE_FILE" ] && echo 'yes' || echo 'no')"
+    exit 1
+fi
 
 if [ -z "$SERVICES" ]; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to get services from docker-compose file"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to get services from docker-compose file: $COMPOSE_FILE"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "The compose file exists but returned no services"
     exit 1
 fi
 
@@ -226,11 +237,19 @@ fi
 # Check if containers already exist and handle them
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Checking for existing containers and port conflicts"
 
-# Get all services from docker-compose file
-SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>/dev/null || echo "")
+# Get all services from docker-compose file (second time for container checking)
+# Validate the compose file again
+SERVICES=$(docker compose -f "$COMPOSE_FILE" config --services 2>&1)
+COMPOSE_EXIT_CODE=$?
+
+if [ $COMPOSE_EXIT_CODE -ne 0 ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to parse docker-compose file: $COMPOSE_FILE"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Docker compose error: $SERVICES"
+    exit 1
+fi
 
 if [ -z "$SERVICES" ]; then
-    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to get services from docker-compose file"
+    log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to get services from docker-compose file: $COMPOSE_FILE"
     exit 1
 fi
 
