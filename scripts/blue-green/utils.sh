@@ -304,13 +304,42 @@ auto_create_service_registry() {
     
     log_message "INFO" "$service_name" "deploy" "auto-registry" "Found service at ${service_path} with ${compose_file}"
     
-    # Auto-detect domain from service name
-    # e.g., logging-microservice -> logging.statex.cz
-    # Keep hyphens in domain names (don't convert to underscores)
-    local domain_base=$(echo "$service_name" | sed 's/-microservice$//')
-    local domain="${domain_base}.statex.cz"
-    if [ "$service_name" = "statex" ]; then
-        domain="statex.cz"
+    # Auto-detect domain - try multiple sources in order of priority
+    local domain=""
+    
+    # 1. Try to extract from .env file (SERVICE_NAME, DOMAIN, or FRONTEND_URL)
+    if [ -f "${service_path}/.env" ]; then
+        # Try SERVICE_NAME first (e.g., SERVICE_NAME=flipflop.statex.cz)
+        domain=$(grep -E "^SERVICE_NAME=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
+        
+        # If not found, try DOMAIN variable
+        if [ -z "$domain" ]; then
+            domain=$(grep -E "^DOMAIN=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
+        fi
+        
+        # If still not found, try FRONTEND_URL and extract domain
+        if [ -z "$domain" ]; then
+            local frontend_url=$(grep -E "^FRONTEND_URL=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' || echo "")
+            if [ -n "$frontend_url" ]; then
+                domain=$(echo "$frontend_url" | sed 's|^https\?://||' | sed 's|/.*$||' || echo "")
+            fi
+        fi
+        
+        if [ -n "$domain" ]; then
+            log_message "INFO" "$service_name" "deploy" "auto-registry" "Detected domain from .env: ${domain}"
+        fi
+    fi
+    
+    # 2. Fallback: Auto-detect domain from service name
+    if [ -z "$domain" ]; then
+        # e.g., logging-microservice -> logging.statex.cz
+        # Keep hyphens in domain names (don't convert to underscores)
+        local domain_base=$(echo "$service_name" | sed 's/-microservice$//')
+        domain="${domain_base}.statex.cz"
+        if [ "$service_name" = "statex" ]; then
+            domain="statex.cz"
+        fi
+        log_message "INFO" "$service_name" "deploy" "auto-registry" "Using auto-generated domain: ${domain}"
     fi
     
     # Auto-detect docker project base
