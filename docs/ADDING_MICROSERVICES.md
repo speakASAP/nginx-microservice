@@ -155,9 +155,9 @@ services:
       - nginx-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
-      interval: 30s
+      interval: 10s
       timeout: 10s
-      retries: 3
+      retries: 2
 
 networks:
   nginx-network:
