@@ -452,9 +452,9 @@ auto_create_service_registry() {
                         service_json="${service_json}\"container_port\": ${detected_port},"
                     fi
                     service_json="${service_json}\"health_endpoint\": \"${health_endpoint}\","
-                    service_json="${service_json}\"health_timeout\": 5,"
+                    service_json="${service_json}\"health_timeout\": 10,"
                     service_json="${service_json}\"health_retries\": 2,"
-                    service_json="${service_json}\"startup_time\": 5"
+                    service_json="${service_json}\"startup_time\": 10"
                     service_json="${service_json}}"
                     
                     if [ "$first" = true ]; then
@@ -505,9 +505,9 @@ auto_create_service_registry() {
             services_json="${services_json}\"container_port\": ${detected_port},"
         fi
         services_json="${services_json}\"health_endpoint\": \"/health\","
-        services_json="${services_json}\"health_timeout\": 5,"
+        services_json="${services_json}\"health_timeout\": 10,"
         services_json="${services_json}\"health_retries\": 2,"
-        services_json="${services_json}\"startup_time\": 5"
+        services_json="${services_json}\"startup_time\": 10"
         services_json="${services_json}}"
         log_message "WARNING" "$service_name" "deploy" "auto-registry" "Could not detect services from docker-compose, using default 'backend' service"
     fi
