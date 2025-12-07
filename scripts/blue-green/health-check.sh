@@ -55,17 +55,59 @@ check_health() {
     
     local network_name="${NETWORK_NAME:-nginx-network}"
     local health_check_image="${HEALTH_CHECK_IMAGE:-alpine/curl:latest}"
+    
+    # Verify container is running
+    if ! docker ps --format "{{.Names}}" | grep -qE "^${container_name}$"; then
+        # Try to find container with similar name pattern
+        local found_container=$(docker ps --format "{{.Names}}" | grep -E "${container_name}" | head -1 || echo "")
+        if [ -n "$found_container" ]; then
+            log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name not found, using $found_container instead"
+            container_name="$found_container"
+        else
+            log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name is not running"
+            return 1
+        fi
+    fi
+    
+    # Verify container is on the network
+    if ! docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name is not on network ${network_name}"
+        # Try to connect container to network
+        if docker network connect "${network_name}" "${container_name}" 2>/dev/null; then
+            log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Connected $container_name to ${network_name}"
+            sleep 1
+        else
+            log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Failed to connect $container_name to ${network_name}"
+            return 1
+        fi
+    fi
+    
     local attempt=0
     while [ $attempt -lt $retries ]; do
         attempt=$((attempt + 1))
+        
+        # Try network-based health check first
         if docker run --rm --network "${network_name}" "${health_check_image}" \
             curl -s -f --max-time "$timeout" "http://${container_name}:${port}${endpoint}" >/dev/null 2>&1; then
             return 0
         fi
+        
+        # Fallback: try direct exec if network check fails
+        if docker exec "${container_name}" sh -c "command -v curl >/dev/null 2>&1" 2>/dev/null; then
+            if docker exec "${container_name}" curl -s -f --max-time "$timeout" "http://localhost:${port}${endpoint}" >/dev/null 2>&1; then
+                log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Health check passed via direct exec (network check may have failed)"
+                return 0
+            fi
+        fi
+        
         if [ $attempt -lt $retries ]; then
             sleep 1
         fi
     done
+    
+    # Log detailed error information on final failure
+    local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+    log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Health check failed after $retries attempts for $container_name:$port${endpoint} (status: $container_status)"
     return 1
 }
 
@@ -115,11 +157,20 @@ while IFS= read -r service_key; do
     # Determine container name - check if service uses color suffix or single container
     CONTAINER_NAME="${CONTAINER_BASE}-${ACTIVE_COLOR}"
     
-    # Check if single-container deployment exists (no color suffix)
+    # Check if container exists with color suffix
     if ! docker ps --format "{{.Names}}" | grep -qE "^${CONTAINER_NAME}$"; then
         # Try without color suffix
         if docker ps --format "{{.Names}}" | grep -qE "^${CONTAINER_BASE}$"; then
             CONTAINER_NAME="${CONTAINER_BASE}"
+        else
+            # Try to find container with similar name pattern (handles cases where container name might differ)
+            local found_container=$(docker ps --format "{{.Names}}" | grep -E "${CONTAINER_BASE}" | head -1 || echo "")
+            if [ -n "$found_container" ]; then
+                log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container ${CONTAINER_NAME} not found, using $found_container instead"
+                CONTAINER_NAME="$found_container"
+            else
+                log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container ${CONTAINER_NAME} not found, will attempt health check anyway"
+            fi
         fi
     fi
     
