@@ -164,7 +164,7 @@ while IFS= read -r service_key; do
             CONTAINER_NAME="${CONTAINER_BASE}"
         else
             # Try to find container with similar name pattern (handles cases where container name might differ)
-            local found_container=$(docker ps --format "{{.Names}}" | grep -E "${CONTAINER_BASE}" | head -1 || echo "")
+            found_container=$(docker ps --format "{{.Names}}" | grep -E "${CONTAINER_BASE}" | head -1 || echo "")
             if [ -n "$found_container" ]; then
                 log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container ${CONTAINER_NAME} not found, using $found_container instead"
                 CONTAINER_NAME="$found_container"
