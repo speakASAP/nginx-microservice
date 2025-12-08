@@ -80,10 +80,23 @@ if ! reload_nginx; then
 fi
 
 # Update state
+# Ensure old_color is not empty to avoid creating empty keys
+if [ -z "$ACTIVE_COLOR" ] || [ "$ACTIVE_COLOR" = "null" ]; then
+    ACTIVE_COLOR="blue"
+fi
+
 NEW_STATE=$(echo "$STATE" | jq --arg color "$NEW_COLOR" --arg old_color "$ACTIVE_COLOR" --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    ".active_color = \$color | .\"$NEW_COLOR\".status = \"running\" | .\"$old_color\".status = \"backup\" | .last_deployment.color = \$color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = true")
+    ".active_color = \$color | .\"$NEW_COLOR\".status = \"running\" | (if .\"$old_color\" then .\"$old_color\".status = \"backup\" else . end) | .last_deployment.color = \$color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = true")
 
 save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
+
+# Verify state was saved correctly
+VERIFY_STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
+VERIFY_COLOR=$(echo "$VERIFY_STATE" | jq -r '.active_color')
+if [ "$VERIFY_COLOR" != "$NEW_COLOR" ]; then
+    log_message "ERROR" "$SERVICE_NAME" "$NEW_COLOR" "switch" "State file verification failed: expected $NEW_COLOR but got $VERIFY_COLOR"
+    exit 1
+fi
 
 log_message "SUCCESS" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Traffic switched to $NEW_COLOR successfully"
 
