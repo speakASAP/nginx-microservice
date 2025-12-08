@@ -86,7 +86,7 @@ if [ -z "$ACTIVE_COLOR" ] || [ "$ACTIVE_COLOR" = "null" ]; then
 fi
 
 NEW_STATE=$(echo "$STATE" | jq --arg color "$NEW_COLOR" --arg old_color "$ACTIVE_COLOR" --arg timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    ".active_color = \$color | .\"$NEW_COLOR\".status = \"running\" | (if .\"$old_color\" then .\"$old_color\".status = \"backup\" else . end) | .last_deployment.color = \$color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = true")
+    ".active_color = \$color | .[\$color].status = \"running\" | (if (.[\$old_color] != null) then .[\$old_color].status = \"backup\" else . end) | .last_deployment.color = \$color | .last_deployment.timestamp = \$timestamp | .last_deployment.success = true")
 
 save_state "$SERVICE_NAME" "$NEW_STATE" "$DOMAIN"
 
