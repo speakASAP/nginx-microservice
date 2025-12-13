@@ -454,7 +454,8 @@ generate_proxy_locations() {
     location /api/ {
         limit_req zone=api burst=20 nodelay;
         set \$BACKEND_UPSTREAM ${backend_container_name};
-        proxy_pass http://\$BACKEND_UPSTREAM/api/;
+        rewrite ^/api/(.*)$ /api/\$1 break;
+        proxy_pass http://\$BACKEND_UPSTREAM;
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
@@ -494,7 +495,8 @@ generate_proxy_locations() {
     location /api/ {
         limit_req zone=api burst=20 nodelay;
         set \$API_GATEWAY_UPSTREAM ${api_gateway_container_name};
-        proxy_pass http://\$API_GATEWAY_UPSTREAM:${api_gateway_port}/api/;
+        rewrite ^/api/(.*)$ /api/\$1 break;
+        proxy_pass http://\$API_GATEWAY_UPSTREAM:${api_gateway_port};
         include /etc/nginx/includes/common-proxy-settings.conf;
     }
     
