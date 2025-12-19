@@ -246,17 +246,43 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
     
-    # Build all services at once - Docker Compose automatically parallelizes independent builds
-    # This is much faster than building sequentially
-    SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
-    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services in parallel: ${SERVICES_STRING}"
-    
-    if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" build "${SERVICES_TO_BUILD[@]}"; then
-        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to build services: ${SERVICES_STRING}"
-        exit 1
+    # For e-commerce application, build sequentially to avoid CPU overload
+    # Other applications continue to build in parallel for speed
+    if [ "$SERVICE_NAME" = "e-commerce" ]; then
+        SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (e-commerce): ${SERVICES_STRING}"
+        
+        # Build services one by one to reduce CPU load
+        failed_builds=()
+        for service in "${SERVICES_TO_BUILD[@]}"; do
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building service: $service"
+            if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" build "$service"; then
+                log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to build service: $service"
+                failed_builds+=("$service")
+            else
+                log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Service $service built successfully"
+            fi
+        done
+        
+        if [ ${#failed_builds[@]} -gt 0 ]; then
+            log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to build services: ${failed_builds[*]}"
+            exit 1
+        fi
+        
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (sequential build for e-commerce)"
+    else
+        # Build all services at once - Docker Compose automatically parallelizes independent builds
+        # This is much faster than building sequentially
+        SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services in parallel: ${SERVICES_STRING}"
+        
+        if ! docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" build "${SERVICES_TO_BUILD[@]}"; then
+            log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to build services: ${SERVICES_STRING}"
+            exit 1
+        fi
+        
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (parallel build enabled)"
     fi
-    
-    log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (parallel build enabled)"
 else
     log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "No services need rebuilding (all containers are healthy)"
 fi
