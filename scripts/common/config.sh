@@ -479,7 +479,7 @@ generate_proxy_locations() {
 "
     fi
     
-    # For services with api-gateway (like e-commerce), route /api/ to api-gateway
+    # For services with api-gateway (like flipflop), route /api/ to api-gateway
     local api_gateway_container=$(echo "$registry" | jq -r '.services["api-gateway"].container_name_base // empty')
     if [ -n "$api_gateway_container" ] && [ "$api_gateway_container" != "null" ]; then
         # If api-gateway exists and we haven't added /api/ yet, add it

@@ -592,7 +592,7 @@ All services are now standardized and managed through the blue/green deployment 
 
 - **allegro** - Allegro sales platform management
 - **crypto-ai-agent** - Crypto AI agent application
-- **e-commerce** - E-commerce platform
+- **flipflop** - flipflop platform
 - **statex** - Main statex platform application
 
 ### Service Dependencies and Startup Order
@@ -641,7 +641,7 @@ All services have dependencies that must be respected when starting the system. 
 1. **Nginx** (Phase 1 - always runs): nginx-network → nginx-microservice
 2. **Infrastructure** (Phase 2): database-server (postgres + redis)
 3. **Microservices** (Phase 3): logging-microservice → auth-microservice → payments-microservice → notifications-microservice → ai-microservice
-4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → e-commerce
+4. **Applications** (Phase 4): allegro → crypto-ai-agent → statex → flipflop
 
 **Fault Tolerance**:
 
@@ -657,7 +657,7 @@ All services have dependencies that must be respected when starting the system. 
 # Deploy a service (full cycle) - RECOMMENDED: Use deploy-smart.sh for better performance
 ./scripts/blue-green/deploy-smart.sh crypto-ai-agent
 
-# For heavy applications (e-commerce with 10+ services), deploy-smart.sh only rebuilds changed services
+# For heavy applications (flipflop with 10+ services), deploy-smart.sh only rebuilds changed services
 # This significantly speeds up deployment time
 
 # Manual rollback if needed

@@ -246,11 +246,11 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
     
-    # For e-commerce application, build sequentially to avoid CPU overload
+    # For flipflop application, build sequentially to avoid CPU overload
     # Other applications continue to build in parallel for speed
-    if [ "$SERVICE_NAME" = "e-commerce" ]; then
+    if [ "$SERVICE_NAME" = "flipflop" ]; then
         SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
-        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (e-commerce): ${SERVICES_STRING}"
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (flipflop): ${SERVICES_STRING}"
         
         # Build services one by one to reduce CPU load
         failed_builds=()
@@ -269,7 +269,7 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
             exit 1
         fi
         
-        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (sequential build for e-commerce)"
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (sequential build for flipflop)"
     else
         # Build all services at once - Docker Compose automatically parallelizes independent builds
         # This is much faster than building sequentially

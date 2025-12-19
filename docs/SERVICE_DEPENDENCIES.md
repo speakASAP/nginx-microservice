@@ -120,16 +120,16 @@ These applications may depend on microservices and should be started after all m
   - Services: `/health`
 - **May Depend On**: `auth-microservice`, `notifications-microservice`
 
-#### e-commerce
+#### flipflop
 
-- **Purpose**: E-commerce platform (heavy application with 10+ internal services)
+- **Purpose**: flipflop platform (heavy application with 10+ internal services)
 - **Dependencies**: `nginx-network`, `db-server-postgres`, `db-server-redis`
 - **Startup Order**: 10 (start last due to complexity and startup time)
 - **Shared Services**: `postgres`, `redis`
 - **Containers**:
-  - `e-commerce-frontend-blue` / `e-commerce-frontend-green` (Port: 3000)
-  - `e-commerce-api-gateway-blue` / `e-commerce-api-gateway-green` (Port: 3011)
-  - Plus 10+ internal services (managed by e-commerce docker-compose)
+  - `flipflop-frontend-blue` / `flipflop-frontend-green` (Port: 3000)
+  - `flipflop-api-gateway-blue` / `flipflop-api-gateway-green` (Port: 3011)
+  - Plus 10+ internal services (managed by flipflop docker-compose)
 - **Health Endpoints**:
   - Frontend: `/`
   - API Gateway: `/health`
@@ -182,7 +182,7 @@ These applications may depend on microservices and should be started after all m
            │                                          │                        │
            │                                          │                        │
 ┌──────────▼──────────┐                    ┌──────────▼──────────┐    ┌───────▼───────────┐
-│  crypto-ai-agent    │                    │      statex         │    │    e-commerce     │
+│  crypto-ai-agent    │                    │      statex         │    │    flipflop     │
 │  (needs postgres +  │                    │  (consolidated:     │    │  (needs postgres +│
 │  redis)             │                    │  frontend,          │    │  redis)           │
 └─────────────────────┘                    │  submission,        │    └───────────────────┘
@@ -217,7 +217,7 @@ These applications may depend on microservices and should be started after all m
 
 1. Start `crypto-ai-agent` (needs postgres + redis)
 2. Start `statex` (main application - includes frontend, submission-service, user-portal, content-service, ai-orchestrator, api-gateway)
-3. Start `e-commerce` (heavy application, start last)
+3. Start `flipflop` (heavy application, start last)
 
 ## Using the Central Startup Script
 

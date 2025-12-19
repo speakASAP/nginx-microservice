@@ -125,7 +125,7 @@ fi
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 2 completed: Traffic switched to green"
 
 # Phase 3: Monitor health for 30 seconds
-log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 3: Monitoring health for 5 minutes"
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 3: Monitoring health"
 
 MONITOR_DURATION=30  # 30 seconds
 CHECK_INTERVAL=15     # Check every 15 seconds
@@ -237,11 +237,5 @@ else
     log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 skipped: Cleanup disabled in registry (old containers kept for rollback)"
     log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "To manually cleanup later, run: ./scripts/blue-green/cleanup.sh $SERVICE_NAME"
 fi
-
-# Final success
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Smart blue/Green deployment completed successfully!"
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Active color: green"
-log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "=========================================="
 
 exit 0

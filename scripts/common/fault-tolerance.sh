@@ -66,7 +66,7 @@ is_microservice() {
 is_application() {
     local service="$1"
     case "$service" in
-        e-commerce|statex|crypto-ai-agent|allegro)
+        flipflop|statex|crypto-ai-agent|allegro)
             return 0
             ;;
         *)
