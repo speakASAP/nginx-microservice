@@ -307,14 +307,14 @@ auto_create_service_registry() {
     # Auto-detect domain - try multiple sources in order of priority
     local domain=""
     
-    # 1. Try to extract from .env file (SERVICE_NAME, DOMAIN, or FRONTEND_URL)
+    # 1. Try to extract from .env file (DOMAIN, SERVICE_NAME, or FRONTEND_URL)
     if [ -f "${service_path}/.env" ]; then
-        # Try SERVICE_NAME first (e.g., SERVICE_NAME=flipflop.statex.cz)
-        domain=$(grep -E "^SERVICE_NAME=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
+        # Try DOMAIN variable first (e.g., DOMAIN=flipflop.statex.cz) - this is the correct source for domain
+        domain=$(grep -E "^DOMAIN=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
         
-        # If not found, try DOMAIN variable
+        # If not found, try SERVICE_NAME (e.g., SERVICE_NAME=flipflop.statex.cz)
         if [ -z "$domain" ]; then
-            domain=$(grep -E "^DOMAIN=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
+            domain=$(grep -E "^SERVICE_NAME=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
         fi
         
         # If still not found, try FRONTEND_URL and extract domain
