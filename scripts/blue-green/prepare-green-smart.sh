@@ -542,6 +542,85 @@ fi
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Waiting ${MAX_STARTUP} seconds for services to start"
 sleep "$MAX_STARTUP"
 
+# Function to ensure all containers are on the network
+ensure_containers_on_network() {
+    local network_name="${NETWORK_NAME:-nginx-network}"
+    local max_attempts=5
+    local attempt=0
+    local all_connected=false
+    
+    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Ensuring all containers are connected to ${network_name}"
+    
+    while [ $attempt -lt $max_attempts ]; do
+        attempt=$((attempt + 1))
+        local containers_not_connected=0
+        local containers_restarting=0
+        
+        # Check each service container
+        while IFS= read -r service; do
+            CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services.${service}.container_name_base // empty" 2>/dev/null || echo "")
+            if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ]; then
+                CONTAINER_BASE="${DOCKER_PROJECT_BASE}-${service}"
+            fi
+            EXPECTED_CONTAINER="${CONTAINER_BASE}-${PREPARE_COLOR}"
+            
+            # Check if container exists and is running
+            if ! docker ps --format "{{.Names}}" | grep -qE "^${EXPECTED_CONTAINER}$"; then
+                continue
+            fi
+            
+            # Check container status
+            local container_status=$(docker ps --filter "name=${EXPECTED_CONTAINER}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+            if echo "$container_status" | grep -qE "(Restarting|starting)"; then
+                containers_restarting=$((containers_restarting + 1))
+                continue
+            fi
+            
+            # Check if container is on network
+            if ! docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${EXPECTED_CONTAINER}( |$)"; then
+                containers_not_connected=$((containers_not_connected + 1))
+                
+                # Try to connect
+                if ! docker network connect "${network_name}" "${EXPECTED_CONTAINER}" 2>/dev/null; then
+                    if [ $attempt -eq $max_attempts ]; then
+                        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to connect ${EXPECTED_CONTAINER} to ${network_name}"
+                    fi
+                else
+                    log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Connected ${EXPECTED_CONTAINER} to ${network_name}"
+                fi
+            fi
+        done <<< "$SERVICES"
+        
+        # If all containers are connected and stable, we're done
+        if [ $containers_not_connected -eq 0 ] && [ $containers_restarting -eq 0 ]; then
+            all_connected=true
+            break
+        fi
+        
+        # Log progress
+        if [ $containers_restarting -gt 0 ]; then
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Waiting for containers to stabilize ($containers_restarting restarting, attempt $attempt/$max_attempts)"
+        elif [ $containers_not_connected -gt 0 ]; then
+            log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Connecting containers to network ($containers_not_connected remaining, attempt $attempt/$max_attempts)"
+        fi
+        
+        if [ $attempt -lt $max_attempts ]; then
+            sleep 2
+        fi
+    done
+    
+    if [ "$all_connected" = "true" ]; then
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All containers are connected to ${network_name}"
+        return 0
+    else
+        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Some containers may not be connected to ${network_name}, continuing with health checks"
+        return 0  # Don't fail - health checks will handle individual failures
+    fi
+}
+
+# Ensure all containers are on the network before health checks
+ensure_containers_on_network
+
 # Health check function
 check_health() {
     local container_name="$1"
@@ -560,17 +639,60 @@ check_health() {
         return 1
     fi
     
-    # Verify container is on the network
-    if ! docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
-        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is not on network ${network_name}"
+    # Verify container is on the network with retry logic
+    local network_retry=0
+    local max_network_retries=3
+    local network_connected=false
+    
+    while [ $network_retry -lt $max_network_retries ]; do
+        # Check container status first - skip if restarting
+        local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+        if echo "$container_status" | grep -qE "(Restarting|starting)"; then
+            if [ $network_retry -eq 0 ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is in unstable state: $container_status, waiting..."
+            fi
+            sleep 2
+            network_retry=$((network_retry + 1))
+            continue
+        fi
+        
+        # Check if container is on network
+        if docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+            network_connected=true
+            break
+        fi
+        
         # Try to connect container to network
-        if docker network connect "${network_name}" "${container_name}" 2>/dev/null; then
+        if [ $network_retry -eq 0 ]; then
+            log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is not on network ${network_name}, attempting to connect..."
+        fi
+        
+        local connect_error=""
+        if connect_error=$(docker network connect "${network_name}" "${container_name}" 2>&1); then
             log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Connected $container_name to ${network_name}"
             sleep 1
+            # Verify connection was successful
+            if docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+                network_connected=true
+                break
+            fi
         else
-            log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to connect $container_name to ${network_name}"
-            return 1
+            if [ $network_retry -eq $((max_network_retries - 1)) ]; then
+                log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Failed to connect $container_name to ${network_name} after $max_network_retries attempts: ${connect_error}"
+            else
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Network connection attempt $((network_retry + 1))/$max_network_retries failed: ${connect_error}, retrying..."
+            fi
         fi
+        
+        network_retry=$((network_retry + 1))
+        if [ $network_retry -lt $max_network_retries ]; then
+            sleep 2
+        fi
+    done
+    
+    if [ "$network_connected" = "false" ]; then
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name could not be connected to ${network_name} after $max_network_retries attempts"
+        return 1
     fi
     
     while [ $attempt -lt $retries ]; do

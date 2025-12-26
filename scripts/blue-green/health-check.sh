@@ -69,17 +69,60 @@ check_health() {
         fi
     fi
     
-    # Verify container is on the network
-    if ! docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
-        log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name is not on network ${network_name}"
+    # Verify container is on the network with retry logic
+    local network_retry=0
+    local max_network_retries=3
+    local network_connected=false
+    
+    while [ $network_retry -lt $max_network_retries ]; do
+        # Check container status first - skip if restarting
+        local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+        if echo "$container_status" | grep -qE "(Restarting|starting)"; then
+            if [ $network_retry -eq 0 ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name is in unstable state: $container_status, waiting..."
+            fi
+            sleep 2
+            network_retry=$((network_retry + 1))
+            continue
+        fi
+        
+        # Check if container is on network
+        if docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+            network_connected=true
+            break
+        fi
+        
         # Try to connect container to network
-        if docker network connect "${network_name}" "${container_name}" 2>/dev/null; then
+        if [ $network_retry -eq 0 ]; then
+            log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name is not on network ${network_name}, attempting to connect..."
+        fi
+        
+        local connect_error=""
+        if connect_error=$(docker network connect "${network_name}" "${container_name}" 2>&1); then
             log_message "INFO" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Connected $container_name to ${network_name}"
             sleep 1
+            # Verify connection was successful
+            if docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
+                network_connected=true
+                break
+            fi
         else
-            log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Failed to connect $container_name to ${network_name}"
-            return 1
+            if [ $network_retry -eq $((max_network_retries - 1)) ]; then
+                log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Failed to connect $container_name to ${network_name} after $max_network_retries attempts: ${connect_error}"
+            else
+                log_message "WARNING" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Network connection attempt $((network_retry + 1))/$max_network_retries failed: ${connect_error}, retrying..."
+            fi
         fi
+        
+        network_retry=$((network_retry + 1))
+        if [ $network_retry -lt $max_network_retries ]; then
+            sleep 2
+        fi
+    done
+    
+    if [ "$network_connected" = "false" ]; then
+        log_message "ERROR" "$SERVICE_NAME" "$ACTIVE_COLOR" "health-check" "Container $container_name could not be connected to ${network_name} after $max_network_retries attempts"
+        return 1
     fi
     
     local attempt=0
