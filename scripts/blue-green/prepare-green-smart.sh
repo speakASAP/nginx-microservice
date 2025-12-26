@@ -640,21 +640,45 @@ check_health() {
     fi
     
     # Verify container is on the network with retry logic
+    # First, wait for container to stabilize (not restarting)
+    local stability_wait=0
+    local max_stability_wait=30  # Wait up to 30 seconds for container to stabilize
+    local stability_check_interval=2
+    
+    while [ $stability_wait -lt $max_stability_wait ]; do
+        local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+        if echo "$container_status" | grep -qE "(Restarting|starting)"; then
+            if [ $stability_wait -eq 0 ]; then
+                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is in unstable state: $container_status, waiting for it to stabilize..."
+            fi
+            sleep $stability_check_interval
+            stability_wait=$((stability_wait + stability_check_interval))
+            continue
+        else
+            # Container is stable (not restarting)
+            if [ $stability_wait -gt 0 ]; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name stabilized after ${stability_wait}s"
+            fi
+            break
+        fi
+    done
+    
+    # Check if container is still restarting after waiting
+    local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
+    if echo "$container_status" | grep -qE "(Restarting|starting)"; then
+        log_message "ERROR" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is still restarting after ${max_stability_wait}s - checking logs..."
+        # Show last 10 lines of logs to help diagnose
+        local container_logs=$(docker logs --tail 10 "$container_name" 2>&1 | head -10 || echo "Could not retrieve logs")
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container logs (last 10 lines): ${container_logs}"
+        return 1
+    fi
+    
+    # Now attempt network connection with retry logic
     local network_retry=0
     local max_network_retries=3
     local network_connected=false
     
     while [ $network_retry -lt $max_network_retries ]; do
-        # Check container status first - skip if restarting
-        local container_status=$(docker ps --filter "name=${container_name}" --format "{{.Status}}" 2>/dev/null || echo "unknown")
-        if echo "$container_status" | grep -qE "(Restarting|starting)"; then
-            if [ $network_retry -eq 0 ]; then
-                log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Container $container_name is in unstable state: $container_status, waiting..."
-            fi
-            sleep 2
-            network_retry=$((network_retry + 1))
-            continue
-        fi
         
         # Check if container is on network
         if docker network inspect "${network_name}" --format '{{range .Containers}}{{.Name}} {{end}}' 2>/dev/null | grep -qE "(^| )${container_name}( |$)"; then
