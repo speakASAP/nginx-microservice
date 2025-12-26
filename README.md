@@ -22,6 +22,26 @@ All SSL management is now centralized in this microservice.
 - 🤖 **Automated Renewal**: Certificates renewed automatically via systemd timer or cron
 - 📝 **Comprehensive Logging**: Access and error logs for all domains
 - 🎯 **Container Independence**: Nginx starts and runs independently of container state - configs generated from registry, not container state
+- 📋 **Automatic Service Registry**: Service registry files are automatically created/updated during deployment
+
+## ⚠️ Production-Ready Service
+
+This service is **production-ready** and should **NOT** be modified directly.
+
+- **✅ Allowed**: Use scripts from this service's directory
+- **❌ NOT Allowed**: Modify code, configuration, or infrastructure directly
+- **⚠️ Permission Required**: If you need to modify something, **ask for permission first**
+
+### Service Registry Management
+
+**DO NOT** create `service-registry.json` files in individual service codebases!
+
+- Service registry files are **automatically created and managed** by the deployment script (`deploy-smart.sh`)
+- They are stored in `nginx-microservice/service-registry/` directory
+- The deployment script auto-detects service configuration from docker-compose files and environment variables
+- Nginx configurations are automatically generated from service registry files
+
+For complete documentation, see [Service Registry Documentation](../docs/SERVICE_REGISTRY.md).
 
 ## Architecture
 

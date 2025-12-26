@@ -6,13 +6,24 @@ This guide explains how to add a new microservice to the system.
 
 To add a microservice, you need to:
 
-1. **Create a service registry file** in `service-registry/` directory
-2. **Ensure your microservice is set up** with docker-compose files
-3. **Deploy the microservice** using the deployment scripts
+1. **Ensure your microservice is set up** with docker-compose files
+2. **Deploy the microservice** using the deployment scripts
+3. **Service registry file will be automatically created** during deployment
 
-## Step 1: Create Service Registry File
+## ⚠️ Important: Service Registry Files
 
-Create a JSON file in `service-registry/{service-name}.json` with the following structure:
+**DO NOT manually create service registry files!** They are automatically created and managed by the deployment script.
+
+- Service registry files are stored in `nginx-microservice/service-registry/` directory
+- They are automatically created/recreated during deployment by `deploy-smart.sh`
+- The deployment script auto-detects service configuration from docker-compose files and environment variables
+- **Never create `service-registry.json` files in individual service codebases**
+
+For more information, see [Service Registry Documentation](../../docs/SERVICE_REGISTRY.md).
+
+## Step 1: Service Registry File (Auto-Created)
+
+The service registry file will be automatically created during deployment. However, here's the structure it will have:
 
 ### Basic Structure (Backend-only service)
 
