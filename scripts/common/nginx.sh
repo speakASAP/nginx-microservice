@@ -421,6 +421,9 @@ test_service_nginx_config() {
         return 1
     fi
     
+    # Fix broken symlinks before testing (prevents nginx from failing on broken symlinks)
+    fix_broken_symlinks
+    
     # Test all configs but provide service-specific context
     # The real isolation comes from generating valid configs
     if type log_message >/dev/null 2>&1; then
@@ -429,6 +432,7 @@ test_service_nginx_config() {
     
     # Use the standard test but it will validate all configs
     # This is acceptable because we ensure each service generates valid configs
+    # Note: test_nginx_config will also fix broken symlinks, but we do it here too for clarity
     if test_nginx_config; then
         if type log_message >/dev/null 2>&1; then
             log_message "SUCCESS" "$service_name" "validation" "test" "Configuration test passed for service: $service_name"
@@ -442,6 +446,48 @@ test_service_nginx_config() {
     fi
 }
 
+# Function to fix broken symlinks in conf.d/
+fix_broken_symlinks() {
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local fixed=0
+    
+    # Check all symlinks in conf.d/
+    if [ -d "$config_dir" ]; then
+        while IFS= read -r symlink; do
+            if [ -L "$symlink" ]; then
+                # Check if symlink target exists
+                local target=$(readlink -f "$symlink" 2>/dev/null || readlink "$symlink" 2>/dev/null || echo "")
+                if [ -z "$target" ] || [ ! -f "$target" ]; then
+                    # Resolve relative symlink
+                    if [ -n "$target" ] && [ "${target#/}" = "$target" ]; then
+                        target="${config_dir}/${target}"
+                    fi
+                    
+                    # If target still doesn't exist, remove broken symlink
+                    if [ ! -f "$target" ]; then
+                        local domain=$(basename "$symlink" .conf)
+                        if type log_message >/dev/null 2>&1; then
+                            log_message "WARNING" "nginx" "config" "fix" "Removing broken symlink: $symlink (target does not exist)"
+                        else
+                            print_warning "Removing broken symlink: $symlink (target does not exist)"
+                        fi
+                        rm -f "$symlink"
+                        fixed=$((fixed + 1))
+                    fi
+                fi
+            fi
+        done < <(find "$config_dir" -maxdepth 1 -type l -name "*.conf" 2>/dev/null)
+    fi
+    
+    if [ $fixed -gt 0 ]; then
+        if type log_message >/dev/null 2>&1; then
+            log_message "INFO" "nginx" "config" "fix" "Fixed $fixed broken symlink(s)"
+        fi
+    fi
+    
+    return 0
+}
+
 # Function to test nginx config (all configs)
 test_nginx_config() {
     local service_name="${1:-}"  # Optional service name parameter
@@ -451,6 +497,9 @@ test_nginx_config() {
         test_service_nginx_config "$service_name"
         return $?
     fi
+    
+    # Fix broken symlinks before testing
+    fix_broken_symlinks
     
     local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
     local max_wait=30

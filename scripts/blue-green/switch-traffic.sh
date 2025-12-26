@@ -54,6 +54,12 @@ if ! switch_config_symlink "$DOMAIN" "$NEW_COLOR"; then
     exit 1
 fi
 
+# Fix broken symlinks before testing (prevents nginx from failing on broken symlinks from other services)
+# This is important because nginx loads all .conf files, not just the service being deployed
+if type fix_broken_symlinks >/dev/null 2>&1; then
+    fix_broken_symlinks
+fi
+
 # Test nginx config (per-service validation)
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Testing nginx configuration"
 
