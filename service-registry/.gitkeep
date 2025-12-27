@@ -1,0 +1,4 @@
+# This file ensures the service-registry directory is tracked by git
+# Service registry JSON files are automatically created by deployment scripts
+# and are not tracked in git (they are runtime-generated configuration)
+
