@@ -93,15 +93,70 @@ if ! reload_nginx; then
     exit 1
 fi
 
+# Navigate to service directory
+cd "$ACTUAL_PATH"
+
+# Determine compose file for previous color (to restart it)
+REGISTRY_COMPOSE_FILE=$(echo "$REGISTRY" | jq -r '.docker_compose_file')
+if [ -z "$REGISTRY_COMPOSE_FILE" ] || [ "$REGISTRY_COMPOSE_FILE" = "null" ]; then
+    PREVIOUS_COMPOSE_FILE="docker-compose.${SERVICE_NAME}.${PREVIOUS_COLOR}.yml"
+else
+    PREVIOUS_COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${PREVIOUS_COLOR}.yml/")
+fi
+
+# Fallback to generic docker-compose.yml if color-specific doesn't exist
+if [ ! -f "$PREVIOUS_COMPOSE_FILE" ]; then
+    if [ -f "docker-compose.yml" ]; then
+        PREVIOUS_COMPOSE_FILE="docker-compose.yml"
+    fi
+fi
+
+PREVIOUS_PROJECT_NAME="${DOCKER_PROJECT_BASE}_${PREVIOUS_COLOR}"
+
+# Restart previous color containers (they may have been stopped during prepare phase)
+if [ -f "$PREVIOUS_COMPOSE_FILE" ]; then
+    log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Restarting previous ${PREVIOUS_COLOR} containers"
+    
+    # Check if containers exist but are stopped
+    if docker compose -f "$PREVIOUS_COMPOSE_FILE" -p "$PREVIOUS_PROJECT_NAME" ps -q 2>/dev/null | grep -q .; then
+        # Containers exist, restart them
+        docker compose -f "$PREVIOUS_COMPOSE_FILE" -p "$PREVIOUS_PROJECT_NAME" start 2>/dev/null || {
+            # If start fails, try up -d (in case containers were removed)
+            log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Containers may have been removed, recreating them"
+            docker compose -f "$PREVIOUS_COMPOSE_FILE" -p "$PREVIOUS_PROJECT_NAME" up -d 2>/dev/null || true
+        }
+        log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Previous ${PREVIOUS_COLOR} containers restarted"
+    else
+        # Containers don't exist, create them
+        log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Previous ${PREVIOUS_COLOR} containers not found, creating them"
+        docker compose -f "$PREVIOUS_COMPOSE_FILE" -p "$PREVIOUS_PROJECT_NAME" up -d 2>/dev/null || true
+        log_message "INFO" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Previous ${PREVIOUS_COLOR} containers created"
+    fi
+else
+    log_message "WARNING" "$SERVICE_NAME" "$PREVIOUS_COLOR" "rollback" "Previous compose file not found: $PREVIOUS_COMPOSE_FILE"
+fi
+
 # Stop failed color containers
 log_message "INFO" "$SERVICE_NAME" "$FAILED_COLOR" "rollback" "Stopping failed $FAILED_COLOR containers"
 
-cd "$ACTUAL_PATH"
-COMPOSE_FILE="docker-compose.${FAILED_COLOR}.yml"
-PROJECT_NAME="${DOCKER_PROJECT_BASE}_${FAILED_COLOR}"
+FAILED_COMPOSE_FILE=""
+if [ -n "$REGISTRY_COMPOSE_FILE" ] && [ "$REGISTRY_COMPOSE_FILE" != "null" ]; then
+    FAILED_COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${FAILED_COLOR}.yml/")
+else
+    FAILED_COMPOSE_FILE="docker-compose.${SERVICE_NAME}.${FAILED_COLOR}.yml"
+fi
 
-if [ -f "$COMPOSE_FILE" ]; then
-    docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" down || true
+# Fallback to generic docker-compose.yml if color-specific file doesn't exist
+if [ ! -f "$FAILED_COMPOSE_FILE" ]; then
+    if [ -f "docker-compose.yml" ]; then
+        FAILED_COMPOSE_FILE="docker-compose.yml"
+    fi
+fi
+
+FAILED_PROJECT_NAME="${DOCKER_PROJECT_BASE}_${FAILED_COLOR}"
+
+if [ -f "$FAILED_COMPOSE_FILE" ]; then
+    docker compose -f "$FAILED_COMPOSE_FILE" -p "$FAILED_PROJECT_NAME" down || true
     log_message "INFO" "$SERVICE_NAME" "$FAILED_COLOR" "rollback" "Stopped $FAILED_COLOR containers"
 fi
 

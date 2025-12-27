@@ -313,6 +313,80 @@ fi
 # Get actual container names from docker-compose config
 COMPOSE_CONFIG=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null || echo "")
 
+# Determine old color (the one we're replacing - opposite of what we're preparing)
+OLD_COLOR=""
+if [ "$PREPARE_COLOR" = "blue" ]; then
+    OLD_COLOR="green"
+else
+    OLD_COLOR="blue"
+fi
+
+# Determine old project name for stopping old containers
+OLD_PROJECT_NAME="${DOCKER_PROJECT_BASE}_${OLD_COLOR}"
+
+# Determine old compose file
+OLD_COMPOSE_FILE=""
+if [ -n "$REGISTRY_COMPOSE_FILE" ] && [ "$REGISTRY_COMPOSE_FILE" != "null" ]; then
+    OLD_COMPOSE_FILE=$(echo "$REGISTRY_COMPOSE_FILE" | sed "s/\.\(blue\|green\)\.yml$/\.${OLD_COLOR}.yml/")
+else
+    OLD_COMPOSE_FILE="docker-compose.${SERVICE_NAME}.${OLD_COLOR}.yml"
+fi
+
+# Fallback to generic docker-compose.yml if color-specific file doesn't exist
+if [ ! -f "$OLD_COMPOSE_FILE" ]; then
+    if [ -f "docker-compose.yml" ]; then
+        OLD_COMPOSE_FILE="docker-compose.yml"
+    fi
+fi
+
+# Stop old color containers before starting new ones to free up ports
+# IMPORTANT: Only STOP containers, do NOT remove them yet
+# Containers will be removed in cleanup phase (Phase 5) only after new color is healthy
+# This ensures we can rollback if new color fails to start
+# This is necessary because blue and green use the same host ports
+if [ -f "$OLD_COMPOSE_FILE" ]; then
+    # Check if old color is currently active
+    if [ "$OLD_COLOR" = "$ACTIVE_COLOR" ]; then
+        log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Old ${OLD_COLOR} containers are currently active - stopping them will cause brief downtime during switch"
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Stopping active ${OLD_COLOR} containers to free up ports for ${PREPARE_COLOR} deployment (containers kept on disk for rollback)"
+    else
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Stopping old ${OLD_COLOR} containers to free up ports before starting ${PREPARE_COLOR} (containers kept on disk for rollback)"
+    fi
+    
+    # Stop old color containers using docker compose (but don't remove them)
+    if docker compose -f "$OLD_COMPOSE_FILE" -p "$OLD_PROJECT_NAME" ps --services 2>/dev/null | grep -q .; then
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Stopping containers from project: $OLD_PROJECT_NAME (keeping containers on disk)"
+        docker compose -f "$OLD_COMPOSE_FILE" -p "$OLD_PROJECT_NAME" stop 2>/dev/null || true
+        sleep 2  # Give containers time to release ports
+        
+        # DO NOT remove containers here - they will be removed in cleanup phase after successful deployment
+        # This allows rollback if new color fails
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Old ${OLD_COLOR} containers stopped (kept on disk for rollback safety)"
+    else
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "No old ${OLD_COLOR} containers found to stop"
+    fi
+else
+    log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Old compose file not found: $OLD_COMPOSE_FILE, will try to stop containers by name pattern"
+    
+    # Fallback: stop containers by name pattern (but don't remove them)
+    SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    if [ -n "$SERVICE_KEYS" ]; then
+        while IFS= read -r service_key; do
+            CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+            if [ -z "$CONTAINER_BASE" ] || [ "$CONTAINER_BASE" = "null" ]; then
+                CONTAINER_BASE="${DOCKER_PROJECT_BASE}-${service_key}"
+            fi
+            OLD_CONTAINER="${CONTAINER_BASE}-${OLD_COLOR}"
+            
+            if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^${OLD_CONTAINER}$"; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Stopping old container: $OLD_CONTAINER (keeping on disk for rollback)"
+                docker stop "$OLD_CONTAINER" 2>/dev/null || true
+                # DO NOT remove container here - it will be removed in cleanup phase
+            fi
+        done <<< "$SERVICE_KEYS"
+    fi
+fi
+
 # Check each service for existing containers and port conflicts
 while IFS= read -r service; do
     CONTAINER_BASE=$(echo "$REGISTRY" | jq -r ".services.${service}.container_name_base // empty" 2>/dev/null || echo "")
@@ -400,7 +474,7 @@ while IFS= read -r service; do
         fi
     fi
     
-    # Kill any process/container using the port
+    # Kill any process/container using the port (after stopping old color, this should be mostly cleanup)
     if [ -n "$host_port" ] && [ "$host_port" != "null" ]; then
         if type kill_port_if_in_use >/dev/null 2>&1; then
             kill_port_if_in_use "$host_port" "$SERVICE_NAME" "$PREPARE_COLOR"
