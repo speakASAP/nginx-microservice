@@ -12,7 +12,10 @@ if [ "$STAGING" = "true" ]; then
 fi
 
 CERT_DIR="/etc/letsencrypt/live"
-HOST_CERT_DIR="/certificates"
+# HOST_CERT_DIR: Location on host filesystem where nginx can access certificates
+# Note: ./certificates/ on host is mounted to /etc/letsencrypt/ in certbot container
+# So we copy to /etc/letsencrypt/${DOMAIN}/ which maps to ./certificates/${DOMAIN}/ on host
+HOST_CERT_DIR="/etc/letsencrypt"
 CURRENT_EPOCH=$(date +%s)
 THRESHOLD_DAYS=30
 RENEWED=0

@@ -7,10 +7,10 @@
 #
 # Certificate Storage Locations:
 # - Inside certbot container: /etc/letsencrypt/live/<domain>/ (symlinks to archive/)
-# - Host filesystem: ./certificates/<domain>/ (mounted at /certificates/ in container)
+# - Host filesystem: ./certificates/<domain>/ (mounted at /etc/letsencrypt/ in certbot container)
 # - Nginx access: ./certificates/<domain>/ (mounted at /etc/nginx/certs/ in nginx container)
 #
-# IMPORTANT: The certificate files must be copied to /certificates/<domain>/ so that:
+# IMPORTANT: The certificate files must be copied to /etc/letsencrypt/<domain>/ so that:
 # 1. They persist on the host filesystem (not just in container volumes)
 # 2. Nginx container can access them via the volume mount
 # 3. They survive container restarts and recreations
@@ -30,9 +30,10 @@ fi
 # Certificate paths
 # CERT_DIR: Location where certbot stores certificates (with symlinks to archive)
 # HOST_CERT_DIR: Location on host filesystem where nginx can access certificates
-# Note: /certificates/ is mounted from ./certificates/ on host
+# Note: ./certificates/ on host is mounted to /etc/letsencrypt/ in certbot container
+# So we copy to /etc/letsencrypt/${DOMAIN}/ which maps to ./certificates/${DOMAIN}/ on host
 CERT_DIR="/etc/letsencrypt/live/${DOMAIN}"
-HOST_CERT_DIR="/certificates/${DOMAIN}"
+HOST_CERT_DIR="/etc/letsencrypt/${DOMAIN}"
 FULLCHAIN="${CERT_DIR}/fullchain.pem"
 PRIVKEY="${CERT_DIR}/privkey.pem"
 
@@ -93,7 +94,7 @@ if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
     
     # CRITICAL: Copy to host filesystem
     # The certificates in /etc/letsencrypt/live/ are symlinks pointing to archive/
-    # We need to copy the actual files to /certificates/ which is mounted to ./certificates/ on host
+    # We copy to /etc/letsencrypt/${DOMAIN}/ which is mounted from ./certificates/ on host
     # This ensures:
     # 1. Nginx container can access them via volume mount (./certificates -> /etc/nginx/certs)
     # 2. Files persist on host filesystem (not just in container volumes)
