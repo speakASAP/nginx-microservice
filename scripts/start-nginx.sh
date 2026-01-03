@@ -125,24 +125,27 @@ start_nginx_microservice() {
             run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice is unhealthy"
         fi
         
-        # Check if nginx process is actually running inside container
-        print_status "Verifying nginx process is running..."
-        if docker compose exec -T nginx pgrep nginx >/dev/null 2>&1; then
-            print_success "Nginx process is ${GREEN_CHECK} running"
-            print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
-            print_detail "This is expected behavior - nginx will connect when containers start."
-            print_detail "New service configs are validated before being applied - invalid configs are rejected."
-        else
-            # Nginx process is not running - this is a real problem
-            print_error "Nginx process is NOT running - nginx failed to start"
-            print_detail "Container status: $container_status_full"
-            print_detail "Container logs (last 30 lines):"
-            docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
-            print_error "Nginx must be running - zero tolerance policy"
-            run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "Nginx process is not running"
-        fi
-        
-        return 0
+                # Check if nginx process is actually running inside container
+                print_status "Verifying nginx process is running..."
+                if docker compose exec -T nginx pgrep nginx >/dev/null 2>&1; then
+                    print_success "Nginx process is ${GREEN_CHECK} running"
+                    print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
+                    print_detail "This is expected behavior - nginx will connect when containers start."
+                    print_detail "New service configs are validated before being applied - invalid configs are rejected."
+                    
+                    # Setup default landing page after nginx is running
+                    setup_default_landing_page
+                else
+                    # Nginx process is not running - this is a real problem
+                    print_error "Nginx process is NOT running - nginx failed to start"
+                    print_detail "Container status: $container_status_full"
+                    print_detail "Container logs (last 30 lines):"
+                    docker logs --tail 30 nginx-microservice 2>&1 | sed 's/^/  /' || true
+                    print_error "Nginx must be running - zero tolerance policy"
+                    run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "Nginx process is not running"
+                fi
+                
+                return 0
     fi
     
     # Check and kill processes using ports 80 and 443 before starting
@@ -288,6 +291,9 @@ start_nginx_microservice() {
                     print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
                     print_detail "This is expected behavior - nginx will connect when containers start."
                     print_detail "New service configs are validated before being applied - invalid configs are rejected."
+                    
+                    # Setup default landing page after nginx is running
+                    setup_default_landing_page
                 else
                     # Nginx process is not running - this is a real problem
                     print_error "Nginx process is NOT running - nginx failed to start"
@@ -331,6 +337,20 @@ ensure_nginx_config_directories() {
     print_status "Ensuring nginx config directories exist..."
     mkdir -p "$staging_dir" "$rejected_dir" "$blue_green_dir"
     print_success "Nginx config directories ready"
+}
+
+# Function to setup default landing page
+setup_default_landing_page() {
+    # Source default landing setup script
+    local default_landing_script="${SCRIPT_DIR}/common/default-landing.sh"
+    if [ -f "$default_landing_script" ]; then
+        print_status "Setting up default landing page..."
+        if bash "$default_landing_script"; then
+            print_success "Default landing page setup completed"
+        else
+            print_warning "Default landing page setup had issues (non-fatal)"
+        fi
+    fi
 }
 
 # Main execution

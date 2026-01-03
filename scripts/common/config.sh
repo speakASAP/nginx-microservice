@@ -288,7 +288,7 @@ generate_upstream_blocks() {
     # Check if any services were found
     if [ -z "$service_keys" ]; then
         if type print_warning >/dev/null 2>&1; then
-            print_warning "No services found in registry for $service_name (domain: ${domain:-all}) - cannot generate upstream blocks"
+            print_warning "No services found in registry for $service_name (domain: ${domain:-all}) - cannot generate upstream blocks" >&2
         fi
         echo ""
         return 0

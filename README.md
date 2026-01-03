@@ -23,6 +23,7 @@ All SSL management is now centralized in this microservice.
 - 📝 **Comprehensive Logging**: Access and error logs for all domains
 - 🎯 **Container Independence**: Nginx starts and runs independently of container state - configs generated from registry, not container state
 - 📋 **Automatic Service Registry**: Service registry files are automatically created/updated during deployment
+- 🏠 **Default Landing Page**: Automatically sets up a professional welcome page with SSL certificate on new deployments
 
 ## ⚠️ Production-Ready Service
 
@@ -333,9 +334,34 @@ DEFAULT_DOMAIN_SUFFIX=example.com        # Optional: Default domain suffix for a
 
 4. **MULTI_DOMAIN_SERVICE_NAME**: If you have a service that handles multiple domains (like the statex service), set this to that service name. Defaults to "statex" for backward compatibility.
 
-5. **DEFAULT_DOMAIN_SUFFIX**: Optional. Only used as a fallback when a service's domain cannot be detected from its `.env` file. It's recommended to explicitly set the `DOMAIN` variable in each service's `.env` file instead of relying on auto-generation.
+5. **DEFAULT_DOMAIN_SUFFIX**: Optional. Used for:
+   - Fallback when a service's domain cannot be detected from its `.env` file
+   - **Default landing page**: Automatically sets up a default landing page with SSL certificate for this domain on new deployments
+   - It's recommended to explicitly set the `DOMAIN` variable in each service's `.env` file instead of relying on auto-generation
 
 **Multi-Environment Setup**: To use this codebase on different servers (e.g., "alfares" vs "statex"), simply set `PRODUCTION_BASE_PATH` and `DOCKER_VOLUMES_BASE_PATH` in your `.env` file. All scripts automatically load these values from `.env` and use them instead of hardcoded paths.
+
+### Default Landing Page
+
+The nginx-microservice automatically sets up a default landing page with SSL certificate during initial deployment. This provides a professional welcome page when no applications are configured yet.
+
+**How it works:**
+- On first startup, the system automatically detects the default domain from:
+  1. `DEFAULT_DOMAIN_SUFFIX` environment variable (if set)
+  2. System hostname/FQDN (fallback)
+- Creates a service registry entry for "default-landing" (no services configured)
+- Automatically requests SSL certificate from Let's Encrypt
+- Generates nginx configuration serving the default landing page
+- The landing page is replaced automatically when you deploy your first application
+
+**Benefits:**
+- ✅ Professional welcome page on new server deployments
+- ✅ Automatic SSL certificate provisioning
+- ✅ Zero configuration required - works out of the box
+- ✅ Automatically replaced when applications are deployed
+
+**Example:**
+If you set `DEFAULT_DOMAIN_SUFFIX=alfares.cz` in `.env`, the default landing page will be available at `https://alfares.cz` immediately after nginx starts.
 
 ### Domain Configuration
 
