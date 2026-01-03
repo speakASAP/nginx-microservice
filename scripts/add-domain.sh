@@ -105,6 +105,31 @@ sed -e "s|{{DOMAIN_NAME}}|$DOMAIN|g" \
 
 echo "✅ Staging configuration file created: $STAGING_CONFIG_FILE"
 
+# Ensure SSL certificate exists before validating config
+# This prevents nginx from failing when config requires certificate
+echo ""
+echo "Ensuring SSL certificate exists for domain: $DOMAIN"
+CERT_DIR="${PROJECT_DIR}/certificates/${DOMAIN}"
+FULLCHAIN="${CERT_DIR}/fullchain.pem"
+PRIVKEY="${CERT_DIR}/privkey.pem"
+
+if [ ! -f "$FULLCHAIN" ] || [ ! -f "$PRIVKEY" ]; then
+    echo "⚠️  Certificate not found. Creating temporary self-signed certificate..."
+    mkdir -p "$CERT_DIR"
+    if openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+        -keyout "$PRIVKEY" \
+        -out "$FULLCHAIN" \
+        -subj "/CN=${DOMAIN}" 2>/dev/null; then
+        chmod 600 "$PRIVKEY"
+        chmod 644 "$FULLCHAIN"
+        echo "✅ Temporary self-signed certificate created"
+        echo "   Real certificate will be requested after nginx starts"
+    else
+        echo "⚠️  Failed to create temporary certificate (may need sudo)"
+        echo "   Nginx config validation may fail if certificate is required"
+    fi
+fi
+
 # Validate and apply config using central validation system
 echo ""
 echo "Validating nginx configuration in isolation..."

@@ -761,6 +761,14 @@ ensure_blue_green_configs() {
     local domain="$2"
     local active_color="${3:-blue}"
     
+    # Ensure SSL certificate exists before generating configs
+    # This prevents nginx from failing when configs require certificates
+    if [ -n "$domain" ] && [ "$domain" != "null" ]; then
+        if type ensure_ssl_certificate >/dev/null 2>&1; then
+            ensure_ssl_certificate "$domain" "$service_name"
+        fi
+    fi
+    
     # For statex service, generate configs for all domains defined in registry
     if [ "$service_name" = "statex" ]; then
         local registry=$(load_service_registry "$service_name")

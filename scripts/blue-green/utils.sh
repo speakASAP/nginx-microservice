@@ -614,3 +614,93 @@ auto_create_service_registry() {
     return 0
 }
 
+# Function to ensure SSL certificate exists (with temporary self-signed fallback)
+# This prevents nginx from failing when configs are generated before certificates are requested
+ensure_ssl_certificate() {
+    local domain="$1"
+    local service_name="${2:-}"
+    
+    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
+        return 0  # No domain, no certificate needed
+    fi
+    
+    local cert_dir="${NGINX_PROJECT_DIR}/certificates/${domain}"
+    local fullchain="${cert_dir}/fullchain.pem"
+    local privkey="${cert_dir}/privkey.pem"
+    
+    # Check if certificate already exists
+    if [ -f "$fullchain" ] && [ -f "$privkey" ]; then
+        if type log_message >/dev/null 2>&1; then
+            log_message "SUCCESS" "$service_name" "cert" "check" "Certificate exists for domain: $domain"
+        fi
+        return 0
+    fi
+    
+    # Certificate doesn't exist - create temporary self-signed certificate
+    # This allows nginx to start so we can request the real certificate
+    if type log_message >/dev/null 2>&1; then
+        log_message "WARNING" "$service_name" "cert" "check" "Certificate not found for domain: $domain"
+        log_message "INFO" "$service_name" "cert" "check" "Creating temporary self-signed certificate to allow nginx to start"
+    fi
+    
+    # Create certificate directory (may need sudo if owned by root)
+    if ! mkdir -p "$cert_dir" 2>/dev/null; then
+        # Try with sudo if regular mkdir fails
+        if command -v sudo >/dev/null 2>&1; then
+            sudo mkdir -p "$cert_dir" 2>/dev/null || {
+                if type log_message >/dev/null 2>&1; then
+                    log_message "ERROR" "$service_name" "cert" "check" "Failed to create certificate directory: $cert_dir"
+                fi
+                return 1
+            }
+        else
+            if type log_message >/dev/null 2>&1; then
+                log_message "ERROR" "$service_name" "cert" "check" "Failed to create certificate directory: $cert_dir (sudo not available)"
+            fi
+            return 1
+        fi
+    fi
+    
+    # Create temporary self-signed certificate (valid for 1 day)
+    if ! openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+        -keyout "$privkey" \
+        -out "$fullchain" \
+        -subj "/CN=${domain}" 2>/dev/null; then
+        # Try with sudo if regular openssl fails
+        if command -v sudo >/dev/null 2>&1; then
+            sudo openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
+                -keyout "$privkey" \
+                -out "$fullchain" \
+                -subj "/CN=${domain}" 2>/dev/null || {
+                if type log_message >/dev/null 2>&1; then
+                    log_message "ERROR" "$service_name" "cert" "check" "Failed to create temporary certificate for: $domain"
+                fi
+                return 1
+            }
+            # Fix ownership and permissions after sudo
+            sudo chmod 600 "$privkey" 2>/dev/null || true
+            sudo chmod 644 "$fullchain" 2>/dev/null || true
+            # Try to change ownership to current user if possible
+            if [ -n "${USER:-}" ]; then
+                sudo chown -R "${USER}:${USER}" "$cert_dir" 2>/dev/null || true
+            fi
+        else
+            if type log_message >/dev/null 2>&1; then
+                log_message "ERROR" "$service_name" "cert" "check" "Failed to create temporary certificate (sudo not available)"
+            fi
+            return 1
+        fi
+    else
+        # Set proper permissions
+        chmod 600 "$privkey" 2>/dev/null || true
+        chmod 644 "$fullchain" 2>/dev/null || true
+    fi
+    
+    if type log_message >/dev/null 2>&1; then
+        log_message "SUCCESS" "$service_name" "cert" "check" "Temporary self-signed certificate created for: $domain"
+        log_message "INFO" "$service_name" "cert" "check" "Real certificate will be requested from Let's Encrypt after nginx starts"
+    fi
+    
+    return 0
+}
+

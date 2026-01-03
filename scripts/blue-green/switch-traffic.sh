@@ -38,6 +38,15 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Switching traffic from $ACTIVE_COLOR to $NEW_COLOR"
 
+# Ensure SSL certificate exists before generating configs
+log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Ensuring SSL certificate exists for domain: $DOMAIN"
+
+if type ensure_ssl_certificate >/dev/null 2>&1; then
+    if ! ensure_ssl_certificate "$DOMAIN" "$SERVICE_NAME"; then
+        log_message "WARNING" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Failed to ensure certificate, continuing anyway"
+    fi
+fi
+
 # Ensure blue and green configs exist
 log_message "INFO" "$SERVICE_NAME" "$NEW_COLOR" "switch" "Ensuring blue and green configs exist"
 
