@@ -460,6 +460,16 @@ generate_proxy_locations() {
         set \$BACKEND_UPSTREAM ${backend_container_name};
         proxy_pass http://\$BACKEND_UPSTREAM;
         include /etc/nginx/includes/common-proxy-settings.conf;
+        
+        # Fallback to default page on upstream errors (502, 503, 504)
+        error_page 502 503 504 = @default_page;
+    }
+    
+    # Fallback location for default landing page
+    location @default_page {
+        root /var/www/html;
+        try_files /default.html =502;
+        add_header Content-Type text/html;
     }
     
 "
@@ -520,6 +530,18 @@ generate_proxy_locations() {
     
 "
         fi
+    fi
+    
+    # If no proxy locations were generated, add default landing page fallback
+    if [ -z "$proxy_locations" ]; then
+        proxy_locations="    # Default landing page - no services configured yet
+    location / {
+        root /var/www/html;
+        try_files /default.html =404;
+        add_header Content-Type text/html;
+    }
+    
+"
     fi
     
     echo "$proxy_locations"

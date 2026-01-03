@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome - StateX Platform</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 60px 40px;
+            max-width: 600px;
+            width: 90%;
+            text-align: center;
+        }
+        .logo {
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #667eea;
+            font-size: 32px;
+            margin-bottom: 16px;
+            font-weight: 700;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 18px;
+            margin-bottom: 40px;
+            line-height: 1.6;
+        }
+        .status-card {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 30px 0;
+            text-align: left;
+        }
+        .status-card h2 {
+            color: #333;
+            font-size: 20px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-card p {
+            color: #666;
+            line-height: 1.6;
+            margin-bottom: 8px;
+        }
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+        }
+        .status-icon {
+            width: 20px;
+            height: 20px;
+            display: inline-block;
+        }
+        .info {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 16px;
+            border-radius: 8px;
+            margin-top: 30px;
+            text-align: left;
+        }
+        .info p {
+            color: #1976d2;
+            line-height: 1.6;
+            margin: 0;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+            color: #999;
+            font-size: 14px;
+        }
+        @media (max-width: 600px) {
+            .container {
+                padding: 40px 24px;
+            }
+            h1 {
+                font-size: 24px;
+            }
+            .subtitle {
+                font-size: 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🚀</div>
+        <h1>Welcome to StateX Platform</h1>
+        <p class="subtitle">
+            Your infrastructure is ready! This is a default landing page that appears when no application is configured for this domain.
+        </p>
+        
+        <div class="status-card">
+            <h2>
+                <span>✅</span>
+                Infrastructure Status
+            </h2>
+            <div class="status-item">
+                <span class="status-icon">✓</span>
+                <span>Nginx reverse proxy is running</span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon">✓</span>
+                <span>SSL/TLS certificates configured</span>
+            </div>
+            <div class="status-item">
+                <span class="status-icon">✓</span>
+                <span>Domain routing ready</span>
+            </div>
+        </div>
+        
+        <div class="info">
+            <p>
+                <strong>Next Steps:</strong><br>
+                Deploy your application to replace this default page. Once your application is deployed and configured, it will automatically replace this landing page.
+            </p>
+        </div>
+        
+        <div class="footer">
+            <p>StateX Platform • Nginx Microservice</p>
+        </div>
+    </div>
+</body>
+</html>
