@@ -276,6 +276,8 @@ validate_and_apply_config() {
     if type ensure_config_directories >/dev/null 2>&1; then
         ensure_config_directories
     else
+        local staging_dir="${config_dir}/staging"
+        mkdir -p "$staging_dir"
         mkdir -p "$blue_green_dir"
         mkdir -p "$rejected_dir"
     fi

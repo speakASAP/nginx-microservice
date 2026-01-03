@@ -774,7 +774,16 @@ ensure_blue_green_configs() {
                 
                 local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
                 local blue_green_dir="${config_dir}/blue-green"
-                mkdir -p "$blue_green_dir"
+                # Ensure all config directories exist
+                if type ensure_config_directories >/dev/null 2>&1; then
+                    ensure_config_directories
+                else
+                    local staging_dir="${config_dir}/staging"
+                    local rejected_dir="${config_dir}/rejected"
+                    mkdir -p "$staging_dir"
+                    mkdir -p "$blue_green_dir"
+                    mkdir -p "$rejected_dir"
+                fi
                 local blue_config="${blue_green_dir}/${statex_domain}.blue.conf"
                 local green_config="${blue_green_dir}/${statex_domain}.green.conf"
                 

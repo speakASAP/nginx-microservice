@@ -42,6 +42,14 @@ nginx/conf.d/*.disabled
 # Only blue-green/*.conf files should be committed, not the symlinks in conf.d/
 nginx/conf.d/*.conf
 !nginx/conf.d/blue-green/*.conf
+# Allow directories but ignore files inside (except .gitkeep)
+nginx/conf.d/staging/*
+!nginx/conf.d/staging/.gitkeep
+nginx/conf.d/rejected/*
+!nginx/conf.d/rejected/.gitkeep
+nginx/conf.d/blue-green/*
+!nginx/conf.d/blue-green/.gitkeep
+!nginx/conf.d/blue-green/*.conf
 service-registry/*.backup*
 service-registry/*.local
 

@@ -9,6 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
 
+# Ensure nginx config directories exist
+CONFIG_DIR="${PROJECT_DIR}/nginx/conf.d"
+mkdir -p "${CONFIG_DIR}/staging" "${CONFIG_DIR}/blue-green" "${CONFIG_DIR}/rejected"
+
 # First, sync containers and symlinks to ensure everything is correct
 echo "Syncing containers and nginx configuration..."
 if [ -f "${SCRIPT_DIR}/sync-containers-and-nginx.sh" ]; then

@@ -321,6 +321,18 @@ start_nginx_microservice() {
     fi
 }
 
+# Function to ensure nginx config directories exist
+ensure_nginx_config_directories() {
+    local config_dir="${NGINX_PROJECT_DIR}/nginx/conf.d"
+    local staging_dir="${config_dir}/staging"
+    local rejected_dir="${config_dir}/rejected"
+    local blue_green_dir="${config_dir}/blue-green"
+    
+    print_status "Ensuring nginx config directories exist..."
+    mkdir -p "$staging_dir" "$rejected_dir" "$blue_green_dir"
+    print_success "Nginx config directories ready"
+}
+
 # Main execution
 print_status "=========================================="
 print_status "Starting Nginx Phase"
@@ -331,6 +343,9 @@ if ! ensure_docker_daemon; then
     print_error "Failed to ensure Docker daemon is running"
     exit 1
 fi
+
+# Ensure nginx config directories exist before starting
+ensure_nginx_config_directories
 
 # Start nginx-network
 if ! start_nginx_network; then
