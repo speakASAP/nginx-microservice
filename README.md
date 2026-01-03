@@ -299,10 +299,43 @@ For more details, see the [Container and Nginx Synchronization Guide](docs/CONTA
 Edit `.env` file:
 
 ```bash
-CERTBOT_EMAIL=admin@statex.cz    # Email for Let's Encrypt
-CERTBOT_STAGING=false            # Use staging environment (for testing)
-NETWORK_NAME=nginx-network       # Docker network name
+# Let's Encrypt Configuration
+CERTBOT_EMAIL=admin@example.com          # Email for Let's Encrypt (default: admin@example.com)
+CERTBOT_STAGING=false                    # Use staging environment (for testing)
+
+# Docker Network Configuration
+NETWORK_NAME=nginx-network               # Docker network name
+
+# Production Paths (Environment-Specific)
+PRODUCTION_BASE_PATH=/home/statex       # Base directory where services are deployed (e.g., /home/statex, /home/alfares)
+DATABASE_SERVER_PATH=/home/statex/database-server  # Full path to database-server (or ../database-server for relative)
+
+# Docker Volumes Base Path (Environment-Specific)
+DOCKER_VOLUMES_BASE_PATH=/srv/storagebox/alfares/docker-volumes/nginx-microservice  # Base path for Docker volumes
+
+# Multi-Domain Service Configuration
+MULTI_DOMAIN_SERVICE_NAME=statex        # Service name that handles multiple domains (default: statex)
+
+# Default Domain Suffix (Optional)
+DEFAULT_DOMAIN_SUFFIX=example.com        # Optional: Default domain suffix for auto-generated domains
 ```
+
+**Important Configuration Notes**:
+
+1. **PRODUCTION_BASE_PATH**: **REQUIRED for multi-environment support**. Set this to your server's base directory (e.g., `/home/alfares` for alfares server, `/home/statex` for statex server). This is used to locate service directories. All scripts use this variable from `.env` - if not set, they will default to `/home/statex` for backward compatibility only.
+
+2. **DATABASE_SERVER_PATH**: Full path to the database-server directory. Can be absolute (e.g., `/home/alfares/database-server` or `/home/statex/database-server`) or relative (e.g., `../database-server`). If not set, it will default to `${PRODUCTION_BASE_PATH}/database-server`.
+
+3. **DOCKER_VOLUMES_BASE_PATH**: **REQUIRED for multi-environment support**. Set this to match your server's storage location for Docker volumes (logs, etc.). For example:
+   - Alfares: `/srv/storagebox/alfares/docker-volumes/nginx-microservice`
+   - Statex: `/srv/storagebox/statex/docker-volumes/nginx-microservice`
+   If not set, docker-compose.yml will default to `/srv/storagebox/statex/docker-volumes/nginx-microservice` for backward compatibility only.
+
+4. **MULTI_DOMAIN_SERVICE_NAME**: If you have a service that handles multiple domains (like the statex service), set this to that service name. Defaults to "statex" for backward compatibility.
+
+5. **DEFAULT_DOMAIN_SUFFIX**: Optional. Only used as a fallback when a service's domain cannot be detected from its `.env` file. It's recommended to explicitly set the `DOMAIN` variable in each service's `.env` file instead of relying on auto-generation.
+
+**Multi-Environment Setup**: To use this codebase on different servers (e.g., "alfares" vs "statex"), simply set `PRODUCTION_BASE_PATH` and `DOCKER_VOLUMES_BASE_PATH` in your `.env` file. All scripts automatically load these values from `.env` and use them instead of hardcoded paths.
 
 ### Domain Configuration
 

@@ -16,6 +16,7 @@ if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
 fi
 
 # Log file location (in user's home directory)
+# PRODUCTION_BASE_PATH is loaded from .env above
 USER_HOME="${HOME:-${PRODUCTION_BASE_PATH:-/home/statex}}"
 LOG_FILE="${USER_HOME}/docker-cleanup.log"
 

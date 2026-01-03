@@ -284,7 +284,7 @@ if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
                 source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
                 set +a
             fi
-            EMAIL="${CERTBOT_EMAIL:-admin@statex.cz}"
+            EMAIL="${CERTBOT_EMAIL:-admin@example.com}"
         fi
         
         # Request certificate via certbot container

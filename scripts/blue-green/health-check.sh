@@ -21,9 +21,9 @@ fi
 # Load service registry
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
 
-# Load state - for statex service, get domain from registry
+# Load state - for multi-domain services, get domain from registry
 DOMAIN=""
-if [ "$SERVICE_NAME" = "statex" ]; then
+if is_multi_domain_service "$SERVICE_NAME"; then
     REGISTRY=$(load_service_registry "$SERVICE_NAME")
     DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
 fi

@@ -84,8 +84,9 @@ start_database_server() {
         if [ -d "${NGINX_PROJECT_DIR}/../database-server" ]; then
             db_server_path="${NGINX_PROJECT_DIR}/../database-server"
         else
-            # Fall back to absolute path
-            db_server_path="/home/statex/database-server"
+            # Fall back to absolute path using PRODUCTION_BASE_PATH
+            local production_base="${PRODUCTION_BASE_PATH:-/home/statex}"
+            db_server_path="${production_base}/database-server"
         fi
     fi
     
@@ -93,7 +94,8 @@ start_database_server() {
         print_error "database-server directory not found: $db_server_path"
         print_error "Checked paths:"
         print_error "  - ${NGINX_PROJECT_DIR}/../database-server"
-        print_error "  - /home/statex/database-server"
+        local production_base="${PRODUCTION_BASE_PATH:-/home/statex}"
+        print_error "  - ${production_base}/database-server"
         print_error "  - DATABASE_SERVER_PATH environment variable"
         exit 1
     fi

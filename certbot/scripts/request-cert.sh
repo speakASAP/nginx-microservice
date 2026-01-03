@@ -18,7 +18,7 @@
 set -e
 
 DOMAIN="$1"
-EMAIL="${2:-${CERTBOT_EMAIL:-admin@statex.cz}}"
+EMAIL="${2:-${CERTBOT_EMAIL:-admin@example.com}}"
 STAGING="${CERTBOT_STAGING:-false}"
 
 if [ -z "$DOMAIN" ]; then

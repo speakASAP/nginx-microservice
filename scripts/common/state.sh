@@ -34,8 +34,12 @@ load_state() {
     local domain="${2:-}"
     local state_file="${STATE_DIR}/${service_name}.json"
     
-    # For statex service, check if domain-specific state exists
-    if [ "$service_name" = "statex" ] && [ -n "$domain" ]; then
+    # Load .env to get MULTI_DOMAIN_SERVICE_NAME
+    load_env_file
+    
+    # For multi-domain services, check if domain-specific state exists
+    local multi_domain_service="${MULTI_DOMAIN_SERVICE_NAME:-statex}"
+    if [ "$service_name" = "$multi_domain_service" ] && [ -n "$domain" ]; then
         if [ -f "$state_file" ]; then
             # Check if domain-specific state exists
             local domain_state=$(jq -r ".domains[\"$domain\"] // empty" "$state_file" 2>/dev/null)
@@ -54,7 +58,7 @@ load_state() {
         # Create initial domain-specific state
         if [ ! -f "$state_file" ]; then
             mkdir -p "$STATE_DIR"
-            echo "{\"service_name\": \"statex\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
+            echo "{\"service_name\": \"$service_name\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
         fi
         # Add domain state if it doesn't exist
         local current_state=$(cat "$state_file" 2>/dev/null || echo "{}")
@@ -69,10 +73,10 @@ load_state() {
             echo "$current_state" | jq '.' > "$state_file" 2>/dev/null || true
         fi
         # Return domain-specific state (with error handling)
-        local domain_state_output=$(jq -r --arg domain "$domain" '{service_name: "statex", domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null)
+        local domain_state_output=$(jq -r --arg domain "$domain" --arg service_name "$service_name" '{service_name: $service_name, domain: $domain} + .domains[$domain]' "$state_file" 2>/dev/null)
         if [ -z "$domain_state_output" ] || ! echo "$domain_state_output" | jq . >/dev/null 2>&1; then
             # Return default domain state if jq failed or returned invalid JSON (matches initial state semantics)
-            echo "{\"service_name\": \"statex\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"running\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
+            echo "{\"service_name\": \"$service_name\", \"domain\": \"$domain\", \"active_color\": \"blue\", \"blue\": {\"status\": \"running\", \"deployed_at\": null, \"version\": null}, \"green\": {\"status\": \"stopped\", \"deployed_at\": null, \"version\": null}, \"last_deployment\": {\"color\": \"blue\", \"timestamp\": null, \"success\": true}}"
         else
             echo "$domain_state_output"
         fi
@@ -135,7 +139,7 @@ save_state() {
     # For statex service with domain, save to domain-specific state
     if [ "$service_name" = "statex" ] && [ -n "$domain" ]; then
         if [ ! -f "$state_file" ]; then
-            echo "{\"service_name\": \"statex\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
+            echo "{\"service_name\": \"$service_name\", \"domains\": {}}" | jq '.' > "$state_file" 2>/dev/null || true
         fi
         # Extract domain state from state_data (remove service_name and domain fields)
         local domain_state=$(echo "$state_data" | jq 'del(.service_name, .domain)' 2>/dev/null)

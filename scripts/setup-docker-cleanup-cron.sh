@@ -15,6 +15,7 @@ if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
 fi
 
 # Use user's home directory for script location
+# PRODUCTION_BASE_PATH is loaded from .env above
 USER_HOME="${HOME:-${PRODUCTION_BASE_PATH:-/home/statex}}"
 SCRIPT_DIR="${USER_HOME}/bin"
 SCRIPT_PATH="${SCRIPT_DIR}/docker-cleanup-images.sh"

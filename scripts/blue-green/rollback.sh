@@ -30,11 +30,11 @@ else
     exit 1
 fi
 
-# Load state - for statex service, get domain from registry
+# Load state - for multi-domain services, get domain from registry
 # For other services, get domain from registry
 DOMAIN=""
-if [ "$SERVICE_NAME" = "statex" ]; then
-    # For statex, domain is in registry but we need to get it from state or use default
+if is_multi_domain_service "$SERVICE_NAME"; then
+    # For multi-domain services, domain is in registry but we need to get it from state or use default
     DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
 else
     # For other services, get domain from registry

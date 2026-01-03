@@ -92,6 +92,31 @@ log_message() {
     esac
 }
 
+# Helper function to check if service is a multi-domain service
+# Multi-domain services have multiple domains in their registry
+is_multi_domain_service() {
+    local service_name="$1"
+    # Load MULTI_DOMAIN_SERVICE_NAME from .env (defaults to "statex" for backward compatibility)
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    local multi_domain_service="${MULTI_DOMAIN_SERVICE_NAME:-statex}"
+    if [ "$service_name" = "$multi_domain_service" ]; then
+        return 0
+    fi
+    # Also check if registry has multiple domains
+    if [ -f "${COMMON_DIR}/registry.sh" ]; then
+        local registry=$(load_service_registry "$service_name" 2>/dev/null || echo "{}")
+        local domain_count=$(echo "$registry" | jq -r '.domains | keys | length' 2>/dev/null || echo "0")
+        if [ "$domain_count" -gt 1 ]; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
 # Function to check docker compose availability
 check_docker_compose_available() {
     if ! command -v docker >/dev/null 2>&1; then
@@ -266,8 +291,16 @@ auto_create_service_registry() {
     # Ensure registry directory exists
     mkdir -p "$REGISTRY_DIR"
     
+    # Load nginx-microservice .env to get PRODUCTION_BASE_PATH
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    
     # Try to find service directory
-    local production_path="/home/statex/${service_name}"
+    local production_base="${PRODUCTION_BASE_PATH:-/home/statex}"
+    local production_path="${production_base}/${service_name}"
     local service_path=""
     local compose_file=""
     
@@ -276,7 +309,7 @@ auto_create_service_registry() {
         service_path="$production_path"
     else
         # Try to find in common locations
-        for path in "/home/statex/${service_name}" "/opt/${service_name}" "$HOME/${service_name}"; do
+        for path in "${production_path}" "/opt/${service_name}" "$HOME/${service_name}"; do
             if [ -d "$path" ]; then
                 service_path="$path"
                 break
@@ -330,16 +363,30 @@ auto_create_service_registry() {
         fi
     fi
     
-    # 2. Fallback: Auto-detect domain from service name
+    # 2. Fallback: Auto-detect domain from service name (only if DEFAULT_DOMAIN_SUFFIX is configured)
     if [ -z "$domain" ]; then
-        # e.g., logging-microservice -> logging.statex.cz
-        # Keep hyphens in domain names (don't convert to underscores)
-        local domain_base=$(echo "$service_name" | sed 's/-microservice$//')
-        domain="${domain_base}.statex.cz"
-        if [ "$service_name" = "statex" ]; then
-            domain="statex.cz"
+        # Load nginx-microservice .env to get DEFAULT_DOMAIN_SUFFIX
+        if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+            set -a
+            source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+            set +a
         fi
-        log_message "INFO" "$service_name" "deploy" "auto-registry" "Using auto-generated domain: ${domain}"
+        
+        # Only auto-generate domain if DEFAULT_DOMAIN_SUFFIX is configured
+        if [ -n "${DEFAULT_DOMAIN_SUFFIX:-}" ]; then
+            # e.g., logging-microservice -> logging.<DEFAULT_DOMAIN_SUFFIX>
+            # Keep hyphens in domain names (don't convert to underscores)
+            local domain_base=$(echo "$service_name" | sed 's/-microservice$//')
+            domain="${domain_base}.${DEFAULT_DOMAIN_SUFFIX}"
+            # For multi-domain services, use the base domain suffix directly
+            if is_multi_domain_service "$service_name"; then
+                domain="${DEFAULT_DOMAIN_SUFFIX}"
+            fi
+            log_message "INFO" "$service_name" "deploy" "auto-registry" "Using auto-generated domain: ${domain} (from DEFAULT_DOMAIN_SUFFIX=${DEFAULT_DOMAIN_SUFFIX})"
+        else
+            log_message "WARNING" "$service_name" "deploy" "auto-registry" "Domain not found in service .env and DEFAULT_DOMAIN_SUFFIX not configured. Cannot auto-generate domain. Please set DOMAIN in service .env file or configure DEFAULT_DOMAIN_SUFFIX in nginx-microservice/.env"
+            return 1
+        fi
     fi
     
     # Auto-detect docker project base

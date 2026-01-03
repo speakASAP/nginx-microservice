@@ -231,7 +231,15 @@ stop_nginx_microservice() {
 stop_database_server() {
     print_status "Stopping database-server..."
     
-    local db_server_path="${DATABASE_SERVER_PATH:-/home/statex/database-server}"
+    # Load .env to get PRODUCTION_BASE_PATH
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    
+    local production_base="${PRODUCTION_BASE_PATH:-/home/statex}"
+    local db_server_path="${DATABASE_SERVER_PATH:-${production_base}/database-server}"
     if [ ! -d "$db_server_path" ]; then
         print_warning "database-server directory not found: $db_server_path"
         return 0

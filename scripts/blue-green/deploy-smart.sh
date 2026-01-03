@@ -55,7 +55,7 @@ SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo
 
 # Load state to determine active color (don't kill active container serving traffic)
 DOMAIN=""
-if [ "$SERVICE_NAME" = "statex" ]; then
+if is_multi_domain_service "$SERVICE_NAME"; then
     DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
 fi
 STATE=$(load_state "$SERVICE_NAME" "$DOMAIN")
@@ -187,9 +187,9 @@ if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
     
     # Only check if enabled (default: true)
     if [ "$HTTPS_ENABLED" = "true" ] || [ "$HTTPS_ENABLED" = "null" ]; then
-        # Get active color from state - for statex service, get domain from registry
-        # Note: DOMAIN is already set above for non-statex services, only reset for statex
-        if [ "$SERVICE_NAME" = "statex" ]; then
+        # Get active color from state - for multi-domain services, get domain from registry
+        # Note: DOMAIN is already set above for non-multi-domain services, only reset for multi-domain services
+        if is_multi_domain_service "$SERVICE_NAME"; then
             REGISTRY=$(load_service_registry "$SERVICE_NAME")
             DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty')
         fi

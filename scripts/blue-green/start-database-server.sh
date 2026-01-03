@@ -134,8 +134,16 @@ start_database_server() {
         return 0
     fi
     
+    # Load nginx-microservice .env to get PRODUCTION_BASE_PATH
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    
     # Check if database-server directory exists
-    local db_server_path="${DATABASE_SERVER_PATH:-/home/statex/database-server}"
+    local production_base="${PRODUCTION_BASE_PATH:-/home/statex}"
+    local db_server_path="${DATABASE_SERVER_PATH:-${production_base}/database-server}"
     if [ ! -d "$db_server_path" ]; then
         log_message "ERROR" "database-server" "start" "check" "database-server directory not found: $db_server_path"
         return 1

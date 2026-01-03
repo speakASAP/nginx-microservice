@@ -33,7 +33,7 @@ fi
 DOMAIN="$1"
 CONTAINER_NAME="$2"
 PORT="${3:-3000}"
-EMAIL="${4:-${CERTBOT_EMAIL:-admin@statex.cz}}"
+EMAIL="${4:-${CERTBOT_EMAIL:-admin@example.com}}"
 
 # Validate inputs
 if [ -z "$DOMAIN" ] || [ -z "$CONTAINER_NAME" ]; then

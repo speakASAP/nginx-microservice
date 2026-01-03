@@ -20,6 +20,24 @@ load_env_file() {
 # Auto-load .env when this script is sourced
 load_env_file
 
+# Helper function to check if service is a multi-domain service
+# Multi-domain services have multiple domains in their registry (e.g., statex service)
+is_multi_domain_service() {
+    local service_name="$1"
+    # Load MULTI_DOMAIN_SERVICE_NAME from .env (defaults to "statex" for backward compatibility)
+    local multi_domain_service="${MULTI_DOMAIN_SERVICE_NAME:-statex}"
+    if [ "$service_name" = "$multi_domain_service" ]; then
+        return 0
+    fi
+    # Also check if registry has multiple domains
+    local registry=$(load_service_registry "$service_name" 2>/dev/null || echo "{}")
+    local domain_count=$(echo "$registry" | jq -r '.domains | keys | length' 2>/dev/null || echo "0")
+    if [ "$domain_count" -gt 1 ]; then
+        return 0
+    fi
+    return 1
+}
+
 # Source dependencies
 if [ -f "${SCRIPT_DIR}/output.sh" ]; then
     source "${SCRIPT_DIR}/output.sh"
@@ -815,9 +833,9 @@ ensure_blue_green_configs() {
         fi
     fi
     
-    # For non-statex services or when domain is explicitly provided, use standard logic
-    # For statex service, get active_color from domain-specific state
-    if [ "$service_name" = "statex" ]; then
+    # For non-multi-domain services or when domain is explicitly provided, use standard logic
+    # For multi-domain services, get active_color from domain-specific state
+    if is_multi_domain_service "$service_name"; then
         local state=$(load_state "$service_name" "$domain" 2>/dev/null)
         if [ -n "$state" ]; then
             active_color=$(echo "$state" | jq -r '.active_color // "blue"')

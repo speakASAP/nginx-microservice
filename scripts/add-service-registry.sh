@@ -61,8 +61,16 @@ echo "====================================="
 echo ""
 
 # Collect required information
-read -p "Domain (e.g., logging.statex.cz): " DOMAIN
-read -p "Production path (e.g., /home/statex/${SERVICE_NAME}): " PRODUCTION_PATH
+# Load .env to get PRODUCTION_BASE_PATH for example
+if [ -f "${PROJECT_DIR}/.env" ]; then
+    set -a
+    source "${PROJECT_DIR}/.env" 2>/dev/null || true
+    set +a
+fi
+
+PRODUCTION_BASE_EXAMPLE="${PRODUCTION_BASE_PATH:-/home/statex}"
+read -p "Domain (e.g., logging.example.com): " DOMAIN
+read -p "Production path (e.g., ${PRODUCTION_BASE_EXAMPLE}/${SERVICE_NAME}): " PRODUCTION_PATH
 read -p "Docker compose file [docker-compose.blue.yml]: " DOCKER_COMPOSE_FILE
 DOCKER_COMPOSE_FILE="${DOCKER_COMPOSE_FILE:-docker-compose.blue.yml}"
 
