@@ -430,8 +430,14 @@ generate_proxy_locations() {
     local has_backend=false
     local frontend_container=""
     local backend_container=""
+    local first_service_key=""
+    local first_service_container=""
     
     while IFS= read -r service_key; do
+        if [ -z "$first_service_key" ] && [ -n "$service_key" ]; then
+            first_service_key="$service_key"
+            first_service_container=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty")
+        fi
         if [ "$service_key" = "frontend" ]; then
             has_frontend=true
             frontend_container=$(echo "$registry" | jq -r ".services.frontend.container_name_base")
@@ -532,7 +538,43 @@ generate_proxy_locations() {
         fi
     fi
     
-    # If no proxy locations were generated, add default landing page fallback
+    # If no proxy locations were generated, try to use first service as backend
+    if [ -z "$proxy_locations" ] && [ -n "$first_service_key" ] && [ -n "$first_service_container" ] && [ "$first_service_container" != "null" ]; then
+        local first_service_port=$(get_container_port "$service_name" "$first_service_key" "$first_service_container")
+        if [ -n "$first_service_port" ] && [ "$first_service_port" != "null" ]; then
+            local first_service_container_name="${first_service_container}-${active_color}"
+            proxy_locations="${proxy_locations}    # Service-only (no frontend/backend) - root path routes to first service (using variables with resolver for runtime DNS resolution)
+    location / {
+        set \$SERVICE_UPSTREAM ${first_service_container_name};
+        proxy_pass http://\$SERVICE_UPSTREAM:${first_service_port};
+        include /etc/nginx/includes/common-proxy-settings.conf;
+        
+        # Fallback to default page on upstream errors (502, 503, 504)
+        error_page 502 503 504 = @default_page;
+    }
+    
+    # Fallback location for default landing page
+    location @default_page {
+        root /var/www/html;
+        try_files /default.html =502;
+        add_header Content-Type text/html;
+    }
+    
+    # Health check endpoint
+    location /health {
+        set \$SERVICE_UPSTREAM ${first_service_container_name};
+        proxy_pass http://\$SERVICE_UPSTREAM:${first_service_port}/health;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        access_log off;
+        limit_req zone=api burst=5 nodelay;
+    }
+    
+"
+        fi
+    fi
+    
+    # If still no proxy locations were generated, add default landing page fallback
     if [ -z "$proxy_locations" ]; then
         proxy_locations="    # Default landing page - no services configured yet
     location / {
