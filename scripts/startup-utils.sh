@@ -256,3 +256,30 @@ ensure_docker_daemon() {
     return 0
 }
 
+# Function to detect and set docker compose command (supports both V1 and V2)
+# Sets DOCKER_COMPOSE_CMD variable for use in scripts
+# Returns 0 if docker compose is available, 1 otherwise
+detect_docker_compose() {
+    # Try docker compose (V2) first
+    if command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker compose"
+        return 0
+    fi
+    
+    # Fallback to docker-compose (V1)
+    if command -v docker-compose >/dev/null 2>&1; then
+        DOCKER_COMPOSE_CMD="docker-compose"
+        return 0
+    fi
+    
+    # Neither is available
+    print_error "Neither 'docker compose' (V2) nor 'docker-compose' (V1) is available"
+    print_error "Please install Docker Compose V2 plugin or docker-compose V1"
+    return 1
+}
+
+# Initialize docker compose command at script load time
+if ! detect_docker_compose; then
+    # If detection fails, set a default (will be checked again when used)
+    DOCKER_COMPOSE_CMD="docker compose"
+fi

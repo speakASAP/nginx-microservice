@@ -22,6 +22,13 @@ NETWORK_NAME="${NETWORK_NAME:-nginx-network}"
 # Source shared utilities
 source "${SCRIPT_DIR}/startup-utils.sh"
 
+# Ensure docker compose command is available
+if ! detect_docker_compose; then
+    print_error "Docker Compose is not available. Please install Docker Compose V2 plugin or docker-compose V1"
+    exit 1
+fi
+print_detail "Using Docker Compose command: ${DOCKER_COMPOSE_CMD}"
+
 # Function to start nginx-network
 start_nginx_network() {
     print_status "Checking ${NETWORK_NAME}..."
@@ -127,7 +134,7 @@ start_nginx_microservice() {
         
                 # Check if nginx process is actually running inside container
                 print_status "Verifying nginx process is running..."
-                if docker compose exec -T nginx pgrep nginx >/dev/null 2>&1; then
+                if ${DOCKER_COMPOSE_CMD:-docker compose} exec -T nginx pgrep nginx >/dev/null 2>&1; then
                     print_success "Nginx process is ${GREEN_CHECK} running"
                     print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
                     print_detail "This is expected behavior - nginx will connect when containers start."
@@ -192,14 +199,14 @@ start_nginx_microservice() {
     fi
     
     # Start nginx
-    print_detail "Executing: docker compose up -d"
+    print_detail "Executing: ${DOCKER_COMPOSE_CMD:-docker compose} up -d"
     print_detail "Docker compose output:"
-    if docker compose up -d 2>&1; then
+    if ${DOCKER_COMPOSE_CMD:-docker compose} up -d 2>&1; then
         print_success "nginx-microservice containers started"
         
         # Show container status
         print_detail "Container status after startup:"
-        docker compose ps 2>&1 || true
+        ${DOCKER_COMPOSE_CMD:-docker compose} ps 2>&1 || true
         
         # Wait for nginx container to be running
         # Nginx is independent of container state - it can start even if upstreams are unavailable
@@ -285,7 +292,7 @@ start_nginx_microservice() {
                 
                 # Check if nginx process is actually running inside container
                 print_status "Verifying nginx process is running..."
-                if docker compose exec -T nginx pgrep nginx >/dev/null 2>&1; then
+                if ${DOCKER_COMPOSE_CMD:-docker compose} exec -T nginx pgrep nginx >/dev/null 2>&1; then
                     print_success "Nginx process is ${GREEN_CHECK} running"
                     print_detail ""
                     print_detail "Note: Nginx may return 502 errors if upstream containers are not yet available."
@@ -317,12 +324,12 @@ start_nginx_microservice() {
         # Container did not start after max attempts
         print_error "nginx-microservice container did not start after $max_attempts attempts"
         print_detail "Container logs (last 20 lines):"
-        docker compose logs --tail=20 nginx 2>&1 | sed 's/^/  /' || true
+        ${DOCKER_COMPOSE_CMD:-docker compose} logs --tail=20 nginx 2>&1 | sed 's/^/  /' || true
         run_diagnostic_and_exit "${SCRIPT_DIR}/diagnose.sh" "nginx-microservice" "nginx-microservice failed to start"
     else
         print_error "Failed to start nginx-microservice"
         print_detail "Docker compose logs:"
-        docker compose logs --tail=30 2>&1 | sed 's/^/  /' || true
+        ${DOCKER_COMPOSE_CMD:-docker compose} logs --tail=30 2>&1 | sed 's/^/  /' || true
         exit 1
     fi
 }
