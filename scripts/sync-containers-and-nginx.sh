@@ -24,6 +24,9 @@ if [ "$1" = "--restart-nginx" ]; then
     RESTART_NGINX=true
 fi
 
+# Save original SCRIPT_DIR before sourcing utils.sh (which may overwrite it)
+ORIGINAL_SCRIPT_DIR="${SCRIPT_DIR}"
+
 # Source utils (provides all print functions and utility functions)
 if [ -f "${BLUE_GREEN_DIR}/utils.sh" ]; then
     source "${BLUE_GREEN_DIR}/utils.sh"
@@ -32,9 +35,9 @@ else
     exit 1
 fi
 
-# Source config functions for port detection
-if [ -f "${SCRIPT_DIR}/common/config.sh" ]; then
-    source "${SCRIPT_DIR}/common/config.sh"
+# Source config functions for port detection (use original SCRIPT_DIR)
+if [ -f "${ORIGINAL_SCRIPT_DIR}/common/config.sh" ]; then
+    source "${ORIGINAL_SCRIPT_DIR}/common/config.sh"
 else
     echo -e "${RED}[ERROR]${NC} config.sh not found"
     exit 1
