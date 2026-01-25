@@ -20,6 +20,10 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Starting smart blue/green deployment"
 
+# Capture deployment start time
+DEPLOYMENT_START_TIME=$(date +%s)
+DEPLOYMENT_START_TIME_READABLE=$(date '+%Y-%m-%d %H:%M:%S')
+
 # Check if registry exists, if not, try to auto-create it
 REGISTRY_FILE="${REGISTRY_DIR}/${SERVICE_NAME}.json"
 if [ ! -f "$REGISTRY_FILE" ]; then
@@ -242,5 +246,14 @@ else
     log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 5 skipped: Cleanup disabled in registry (old containers kept for rollback)"
     log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "To manually cleanup later, run: ./scripts/blue-green/cleanup.sh $SERVICE_NAME"
 fi
+
+# Calculate and display deployment duration
+DEPLOYMENT_END_TIME=$(date +%s)
+DEPLOYMENT_END_TIME_READABLE=$(date '+%Y-%m-%d %H:%M:%S')
+DEPLOYMENT_DURATION=$((DEPLOYMENT_END_TIME - DEPLOYMENT_START_TIME))
+DEPLOYMENT_MINUTES=$((DEPLOYMENT_DURATION / 60))
+DEPLOYMENT_SECONDS=$((DEPLOYMENT_DURATION % 60))
+
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Deployment duration: Start: $DEPLOYMENT_START_TIME_READABLE | Finish: $DEPLOYMENT_END_TIME_READABLE | Duration: ${DEPLOYMENT_MINUTES}m ${DEPLOYMENT_SECONDS}s"
 
 exit 0
