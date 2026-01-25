@@ -483,7 +483,21 @@ generate_proxy_locations() {
                             continue  # Skip invalid routes
                         fi
                         # Use prefix match - nginx will match most specific first
-                        proxy_locations="${proxy_locations}    location ${route_path} {
+                        # For routes that should match sub-paths (like /api/users), use trailing slash to preserve path
+                        # For exact routes (like /api/users/collect-contact), use exact match
+                        if [[ "$route_path" == "/api/users" ]]; then
+                            # Special case: /api/users needs to preserve sub-paths for dynamic routes
+                            proxy_locations="${proxy_locations}    location ${route_path}/ {
+        set \$FRONTEND_UPSTREAM ${frontend_upstream};
+        proxy_pass http://\$FRONTEND_UPSTREAM${route_path}/;
+        include /etc/nginx/includes/common-proxy-settings.conf;
+        limit_req zone=api burst=20 nodelay;
+    }
+    
+"
+                        else
+                            # Exact route match
+                            proxy_locations="${proxy_locations}    location ${route_path} {
         set \$FRONTEND_UPSTREAM ${frontend_upstream};
         proxy_pass http://\$FRONTEND_UPSTREAM${route_path};
         include /etc/nginx/includes/common-proxy-settings.conf;
@@ -491,6 +505,7 @@ generate_proxy_locations() {
     }
     
 "
+                        fi
                     fi
                 done
             fi
