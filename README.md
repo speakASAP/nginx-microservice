@@ -24,6 +24,7 @@ All SSL management is now centralized in this microservice.
 - 🎯 **Container Independence**: Nginx starts and runs independently of container state - configs generated from registry, not container state
 - 📋 **Automatic Service Registry**: Service registry files are automatically created/updated during deployment
 - 🏠 **Default Landing Page**: Automatically sets up a professional welcome page with SSL certificate on new deployments
+- 🔀 **API Routes Registration**: Universal system for registering custom API routes that bypass generic `/api/` interception
 
 ## ⚠️ Production-Ready Service
 
@@ -346,6 +347,7 @@ DEFAULT_DOMAIN_SUFFIX=example.com        # Optional: Default domain suffix for a
 The nginx-microservice automatically sets up a default landing page with SSL certificate during initial deployment. This provides a professional welcome page when no applications are configured yet.
 
 **How it works:**
+
 - On first startup, the system automatically detects the default domain from:
   1. `DEFAULT_DOMAIN_SUFFIX` environment variable (if set)
   2. System hostname/FQDN (fallback)
@@ -355,6 +357,7 @@ The nginx-microservice automatically sets up a default landing page with SSL cer
 - The landing page is replaced automatically when you deploy your first application
 
 **Benefits:**
+
 - ✅ Professional welcome page on new server deployments
 - ✅ Automatic SSL certificate provisioning
 - ✅ Zero configuration required - works out of the box
@@ -398,6 +401,55 @@ services:
 ```bash
 docker network connect nginx-network <container-name>
 ```
+
+### API Routes Registration
+
+Nginx-microservice intercepts ALL `/api/*` routes by default and routes them to backend services or API gateway. However, some services (like Next.js frontends) have their own API routes that should be handled by specific containers.
+
+**Universal Solution**: Create `nginx-api-routes.conf` in your service directory to register custom API routes.
+
+**How it works:**
+
+1. **Create config file**: `{service}/nginx/nginx-api-routes.conf` (or `{service}/nginx-api-routes.conf`)
+2. **List your routes**: One route per line, starting with `/api/` or `/`
+3. **Automatic registration**: Routes are automatically registered during deployment via `deploy-smart.sh`
+4. **Automatic routing**: System automatically routes to:
+   - Frontend container (if service has frontend)
+   - Backend/first service (if service doesn't have frontend)
+
+**Example config file** (`statex/nginx/nginx-api-routes.conf`):
+
+```text
+# API Routes Configuration
+# Routes are automatically routed to frontend (if service has frontend)
+# or backend/first service (if service doesn't have frontend)
+
+/api/users/collect-contact
+/api/notifications/prototype-request
+/api/contact/collect
+```
+
+**During deployment:**
+
+```bash
+./scripts/blue-green/deploy-smart.sh statex
+```
+
+The deployment script automatically:
+
+- Reads `nginx-api-routes.conf` from your service directory
+- Adds routes to service registry JSON
+- Generates nginx location blocks BEFORE generic `/api/` block
+- Routes are matched by specificity (most specific first)
+
+**Benefits:**
+
+- ✅ **Universal**: Works for all services (frontend, backend, API gateway)
+- ✅ **Automatic**: No manual nginx config editing required
+- ✅ **Version controlled**: Config file stored in service codebase
+- ✅ **Zero downtime**: Routes registered during normal deployment cycle
+
+For complete documentation, see **[API Routes Registration Guide](docs/API_ROUTES_REGISTRATION.md)**.
 
 ## Certificate Management
 

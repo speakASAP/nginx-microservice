@@ -137,6 +137,145 @@ check_docker_compose_available() {
     return 0
 }
 
+# Function to update api_routes in registry from nginx-api-routes.conf
+# Universal function that works for all microservices
+# Looks for nginx-api-routes.conf in service directory or nginx/ subdirectory
+# Routes are automatically routed to frontend if service has frontend, otherwise to backend/first service
+update_registry_api_routes() {
+    local service_name="$1"
+    local registry_file="${REGISTRY_DIR}/${service_name}.json"
+    
+    if [ ! -f "$registry_file" ]; then
+        return 0  # Registry doesn't exist yet, will be created later
+    fi
+    
+    # Get service path from registry
+    local service_path=$(echo "$(load_service_registry "$service_name")" | jq -r '.production_path // empty' 2>/dev/null || echo "")
+    if [ -z "$service_path" ] || [ "$service_path" = "null" ]; then
+        return 0  # Can't find service path, skip
+    fi
+    
+    # Check if service has frontend service
+    local has_frontend=$(echo "$(load_service_registry "$service_name")" | jq -r '.services.frontend // empty' 2>/dev/null || echo "")
+    local routes_file=""
+    local registry_field="api_routes"
+    
+    # Use frontend_api_routes if service has frontend (for backward compatibility and clarity)
+    if [ -n "$has_frontend" ] && [ "$has_frontend" != "null" ]; then
+        registry_field="frontend_api_routes"
+    fi
+    
+    # Look for nginx-api-routes.conf in multiple locations
+    # Paths are constructed from trusted registry data (service_path), so they're safe
+    for path in \
+        "${service_path}/nginx/nginx-api-routes.conf" \
+        "${service_path}/nginx-api-routes.conf"; do
+        if [ -f "$path" ] && [ -r "$path" ]; then
+            routes_file="$path"
+            break
+        fi
+    done
+    
+    if [ -z "$routes_file" ] || [ ! -f "$routes_file" ]; then
+        return 0  # No routes file found, skip (non-fatal)
+    fi
+    
+    # Read routes from config file (skip comments and empty lines)
+    local routes=()
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Skip comments and empty lines
+        line=$(echo "$line" | sed 's/#.*$//' | xargs)
+        if [ -z "$line" ]; then
+            continue
+        fi
+        # Validate route: must be a valid path (alphanumeric, /, -, _, .)
+        if [[ ! "$line" =~ ^[a-zA-Z0-9/._-]+$ ]]; then
+            log_message "WARNING" "$service_name" "deploy" "update-routes" "Skipping invalid route: ${line}"
+            continue
+        fi
+        # Ensure route starts with /
+        if [[ "$line" != /* ]]; then
+            line="/${line}"
+        fi
+        routes+=("$line")
+    done < "$routes_file"
+    
+    # If no valid routes found, skip update
+    if [ ${#routes[@]} -eq 0 ]; then
+        return 0  # No valid routes, skip (non-fatal)
+    fi
+    
+    # Update registry with api_routes or frontend_api_routes
+    # Use jq or python3 to properly escape JSON (prevent injection)
+    if command -v jq >/dev/null 2>&1; then
+        local temp_file=$(mktemp)
+        # Build JSON array using jq for proper escaping
+        local routes_json=$(printf '%s\n' "${routes[@]}" | jq -R . | jq -s .)
+        if jq --argjson routes "$routes_json" --arg field "$registry_field" ".[\$field] = \$routes" "$registry_file" > "$temp_file" 2>/dev/null; then
+            if jq empty "$temp_file" 2>/dev/null; then
+                mv "$temp_file" "$registry_file"
+                log_message "SUCCESS" "$service_name" "deploy" "update-routes" "Updated ${registry_field} with ${#routes[@]} route(s) from ${routes_file}"
+                return 0
+            fi
+        fi
+        rm -f "$temp_file"
+    elif command -v python3 >/dev/null 2>&1; then
+        # Fallback to python3 for JSON manipulation (proper escaping)
+        local temp_file=$(mktemp)
+        # Build routes JSON array using python3 for proper escaping
+        local routes_json=$(printf '%s\n' "${routes[@]}" | python3 -c "import sys, json; print(json.dumps([line.strip() for line in sys.stdin if line.strip()]))")
+        
+        python3 -c "
+import json
+import sys
+import os
+
+registry_file = os.environ.get('REGISTRY_FILE')
+registry_field = os.environ.get('REGISTRY_FIELD')
+routes_json = os.environ.get('ROUTES_JSON')
+temp_file = os.environ.get('TEMP_FILE')
+
+try:
+    # Load existing registry
+    with open(registry_file, 'r') as f:
+        data = json.load(f)
+    
+    # Parse routes from JSON
+    routes = json.loads(routes_json)
+    
+    # Update registry
+    data[registry_field] = routes
+    
+    # Write to temp file
+    with open(temp_file, 'w') as f:
+        json.dump(data, f, indent=2)
+    
+    sys.exit(0)
+except (KeyError, ValueError, IOError, json.JSONDecodeError) as e:
+    sys.exit(1)
+" \
+            REGISTRY_FILE="$registry_file" \
+            REGISTRY_FIELD="$registry_field" \
+            ROUTES_JSON="$routes_json" \
+            TEMP_FILE="$temp_file" \
+            2>/dev/null
+        
+        if [ $? -eq 0 ] && [ -f "$temp_file" ] && [ -s "$temp_file" ]; then
+            # Validate generated JSON
+            if python3 -m json.tool "$temp_file" >/dev/null 2>&1; then
+                mv "$temp_file" "$registry_file"
+                log_message "SUCCESS" "$service_name" "deploy" "update-routes" "Updated ${registry_field} with ${#routes[@]} route(s) from ${routes_file}"
+                return 0
+            fi
+        fi
+        rm -f "$temp_file"
+    else
+        log_message "WARNING" "$service_name" "deploy" "update-routes" "Neither jq nor python3 found. Cannot update ${registry_field}."
+    fi
+    
+    return 0  # Non-fatal, continue even if update fails
+}
+
 # Function to update container_port in registry from docker-compose.yml
 update_registry_ports() {
     local service_name="$1"

@@ -46,6 +46,11 @@ if ! update_registry_ports "$SERVICE_NAME"; then
     # Don't exit - deployment can continue with existing or auto-detected ports
 fi
 
+# Update api_routes in registry from nginx-api-routes.conf (universal for all services)
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating api_routes in registry from nginx-api-routes.conf"
+
+update_registry_api_routes "$SERVICE_NAME"
+
 # Pre-deployment: Check for restarting containers and port conflicts
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
 

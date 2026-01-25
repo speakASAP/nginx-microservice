@@ -458,6 +458,43 @@ generate_proxy_locations() {
     include /etc/nginx/includes/frontend-location.conf;
     
 "
+        
+        # Generate API routes from nginx-api-routes.conf
+        # Routes are automatically routed to frontend if service has frontend
+        # These routes should go to frontend, not backend/API gateway
+        local frontend_api_routes=$(echo "$registry" | jq -r '.frontend_api_routes // empty' 2>/dev/null || echo "")
+        if [ -n "$frontend_api_routes" ] && [ "$frontend_api_routes" != "null" ] && [ "$frontend_api_routes" != "[]" ]; then
+            # Parse frontend_api_routes array and create specific location blocks
+            # These must come BEFORE the generic /api/ block to take precedence
+            local routes_count=$(echo "$frontend_api_routes" | jq -r 'length' 2>/dev/null || echo "0")
+            if [ "$routes_count" -gt 0 ]; then
+                proxy_locations="${proxy_locations}    # API routes from nginx-api-routes.conf (routed to frontend)
+    # These routes are handled by frontend, not backend/API gateway
+"
+                for i in $(seq 0 $((routes_count - 1))); do
+                    local route_path=$(echo "$frontend_api_routes" | jq -r ".[$i]" 2>/dev/null || echo "")
+                    if [ -n "$route_path" ] && [ "$route_path" != "null" ]; then
+                        # Ensure route starts with /api/ (only if it doesn't already start with /api/)
+                        if [[ "$route_path" != /api/* ]] && [[ "$route_path" != /api ]]; then
+                            route_path="/api${route_path}"
+                        fi
+                        # Validate route path (security: prevent injection)
+                        if [[ ! "$route_path" =~ ^/[a-zA-Z0-9/._-]*$ ]]; then
+                            continue  # Skip invalid routes
+                        fi
+                        # Use prefix match - nginx will match most specific first
+                        proxy_locations="${proxy_locations}    location ${route_path} {
+        set \$FRONTEND_UPSTREAM ${frontend_upstream};
+        proxy_pass http://\$FRONTEND_UPSTREAM${route_path};
+        include /etc/nginx/includes/common-proxy-settings.conf;
+        limit_req zone=api burst=20 nodelay;
+    }
+    
+"
+                    fi
+                done
+            fi
+        fi
     elif [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ] && [ "$has_frontend" != "true" ]; then
         # If no frontend but backend exists, route root path to backend
         local backend_container_name="${backend_container}-${active_color}"
@@ -479,6 +516,53 @@ generate_proxy_locations() {
     }
     
 "
+    fi
+    
+    # Generate generic API routes (for any service, not just frontend)
+    # These routes are registered via nginx-api-routes.conf and can route to any service
+    local api_routes=$(echo "$registry" | jq -r '.api_routes // empty' 2>/dev/null || echo "")
+    if [ -n "$api_routes" ] && [ "$api_routes" != "null" ] && [ "$api_routes" != "[]" ]; then
+        local routes_count=$(echo "$api_routes" | jq -r 'length' 2>/dev/null || echo "0")
+        if [ "$routes_count" -gt 0 ]; then
+            # Determine target service for api_routes (default to first service or backend)
+            local target_service=""
+            local target_container=""
+            if [ "$has_backend" = "true" ] && [ -n "$backend_container" ] && [ "$backend_container" != "null" ]; then
+                target_service="backend"
+                target_container="${backend_container}-${active_color}"
+            elif [ -n "$first_service_container" ] && [ "$first_service_container" != "null" ]; then
+                target_service="$first_service_key"
+                target_container="${first_service_container}-${active_color}"
+            fi
+            
+            if [ -n "$target_container" ]; then
+                proxy_locations="${proxy_locations}    # Service-specific API routes (registered via nginx-api-routes.conf)
+    # These routes are handled by ${target_service} service
+"
+                for i in $(seq 0 $((routes_count - 1))); do
+                    local route_path=$(echo "$api_routes" | jq -r ".[$i]" 2>/dev/null || echo "")
+                    if [ -n "$route_path" ] && [ "$route_path" != "null" ]; then
+                        # Ensure route starts with /
+                        if [[ "$route_path" != /* ]]; then
+                            route_path="/${route_path}"
+                        fi
+                        # Validate route path (security: prevent injection)
+                        if [[ ! "$route_path" =~ ^/[a-zA-Z0-9/._-]*$ ]]; then
+                            continue  # Skip invalid routes
+                        fi
+                        # Use prefix match
+                        proxy_locations="${proxy_locations}    location ${route_path} {
+        set \$TARGET_UPSTREAM ${target_container};
+        proxy_pass http://\$TARGET_UPSTREAM${route_path};
+        include /etc/nginx/includes/common-proxy-settings.conf;
+        limit_req zone=api burst=20 nodelay;
+    }
+    
+"
+                    fi
+                done
+            fi
+        fi
     fi
     
     # Generate backend/API location
