@@ -958,10 +958,58 @@ ensure_blue_green_configs() {
                         fi
                         needs_regeneration=true
                     else
-                        if type log_message >/dev/null 2>&1; then
-                            log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $statex_domain"
+                        # Check if registry has frontend_api_routes or api_routes that aren't in the config
+                        # This detects when API routes were added to registry but configs weren't regenerated
+                        local registry=$(load_service_registry "$service_name")
+                        local frontend_api_routes=$(echo "$registry" | jq -r '.frontend_api_routes // empty' 2>/dev/null || echo "")
+                        local api_routes=$(echo "$registry" | jq -r '.api_routes // empty' 2>/dev/null || echo "")
+                        
+                        if [ -n "$frontend_api_routes" ] && [ "$frontend_api_routes" != "null" ] && [ "$frontend_api_routes" != "[]" ]; then
+                            # Check if at least one route from registry exists in config
+                            local route_in_config=false
+                            local first_route=$(echo "$frontend_api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
+                            if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
+                                # Normalize route for grep (escape special chars)
+                                local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
+                                if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                                    route_in_config=true
+                                fi
+                            fi
+                            
+                            if [ "$route_in_config" = false ]; then
+                                if type log_message >/dev/null 2>&1; then
+                                    log_message "INFO" "$service_name" "config" "ensure" "Registry has frontend_api_routes but configs don't, forcing regeneration for $statex_domain"
+                                fi
+                                needs_regeneration=true
+                            fi
                         fi
-                        continue
+                        
+                        if [ "$needs_regeneration" = false ] && [ -n "$api_routes" ] && [ "$api_routes" != "null" ] && [ "$api_routes" != "[]" ]; then
+                            # Check if at least one route from registry exists in config
+                            local route_in_config=false
+                            local first_route=$(echo "$api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
+                            if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
+                                # Normalize route for grep (escape special chars)
+                                local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
+                                if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                                    route_in_config=true
+                                fi
+                            fi
+                            
+                            if [ "$route_in_config" = false ]; then
+                                if type log_message >/dev/null 2>&1; then
+                                    log_message "INFO" "$service_name" "config" "ensure" "Registry has api_routes but configs don't, forcing regeneration for $statex_domain"
+                                fi
+                                needs_regeneration=true
+                            fi
+                        fi
+                        
+                        if [ "$needs_regeneration" = false ]; then
+                            if type log_message >/dev/null 2>&1; then
+                                log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist for $statex_domain"
+                            fi
+                            continue
+                        fi
                     fi
                 else
                     needs_regeneration=true
@@ -1028,10 +1076,58 @@ ensure_blue_green_configs() {
             fi
             needs_regeneration=true
         else
-            if type log_message >/dev/null 2>&1; then
-                log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist and validated for $domain"
+            # Check if registry has frontend_api_routes or api_routes that aren't in the config
+            # This detects when API routes were added to registry but configs weren't regenerated
+            local registry=$(load_service_registry "$service_name")
+            local frontend_api_routes=$(echo "$registry" | jq -r '.frontend_api_routes // empty' 2>/dev/null || echo "")
+            local api_routes=$(echo "$registry" | jq -r '.api_routes // empty' 2>/dev/null || echo "")
+            
+            if [ -n "$frontend_api_routes" ] && [ "$frontend_api_routes" != "null" ] && [ "$frontend_api_routes" != "[]" ]; then
+                # Check if at least one route from registry exists in config
+                local route_in_config=false
+                local first_route=$(echo "$frontend_api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
+                if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
+                    # Normalize route for grep (escape special chars)
+                    local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
+                    if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                        route_in_config=true
+                    fi
+                fi
+                
+                if [ "$route_in_config" = false ]; then
+                    if type log_message >/dev/null 2>&1; then
+                        log_message "INFO" "$service_name" "config" "ensure" "Registry has frontend_api_routes but configs don't, forcing regeneration for $domain"
+                    fi
+                    needs_regeneration=true
+                fi
             fi
-            return 0
+            
+            if [ "$needs_regeneration" = false ] && [ -n "$api_routes" ] && [ "$api_routes" != "null" ] && [ "$api_routes" != "[]" ]; then
+                # Check if at least one route from registry exists in config
+                local route_in_config=false
+                local first_route=$(echo "$api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
+                if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
+                    # Normalize route for grep (escape special chars)
+                    local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
+                    if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                        route_in_config=true
+                    fi
+                fi
+                
+                if [ "$route_in_config" = false ]; then
+                    if type log_message >/dev/null 2>&1; then
+                        log_message "INFO" "$service_name" "config" "ensure" "Registry has api_routes but configs don't, forcing regeneration for $domain"
+                    fi
+                    needs_regeneration=true
+                fi
+            fi
+            
+            if [ "$needs_regeneration" = false ]; then
+                if type log_message >/dev/null 2>&1; then
+                    log_message "INFO" "$service_name" "config" "ensure" "Blue and green configs already exist and validated for $domain"
+                fi
+                return 0
+            fi
         fi
     else
         needs_regeneration=true
