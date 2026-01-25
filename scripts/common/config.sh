@@ -969,9 +969,11 @@ ensure_blue_green_configs() {
                             local route_in_config=false
                             local first_route=$(echo "$frontend_api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
                             if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
-                                # Normalize route for grep (escape special chars)
-                                local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
-                                if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                                # Normalize route for grep - escape forward slashes and other special chars
+                                # Use a simpler pattern that matches the route path in location blocks
+                                local route_escaped=$(echo "$first_route" | sed 's|/|\\/|g')
+                                # Check for location block with this route (with or without trailing slash)
+                                if grep -qE "location[[:space:]]+${route_escaped}[[:space:]]*\{|location[[:space:]]+${route_escaped}/[[:space:]]*\{" "$blue_config" "$green_config" 2>/dev/null; then
                                     route_in_config=true
                                 fi
                             fi
@@ -989,9 +991,11 @@ ensure_blue_green_configs() {
                             local route_in_config=false
                             local first_route=$(echo "$api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
                             if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
-                                # Normalize route for grep (escape special chars)
-                                local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
-                                if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                                # Normalize route for grep - escape forward slashes and other special chars
+                                # Use a simpler pattern that matches the route path in location blocks
+                                local route_escaped=$(echo "$first_route" | sed 's|/|\\/|g')
+                                # Check for location block with this route (with or without trailing slash)
+                                if grep -qE "location[[:space:]]+${route_escaped}[[:space:]]*\{|location[[:space:]]+${route_escaped}/[[:space:]]*\{" "$blue_config" "$green_config" 2>/dev/null; then
                                     route_in_config=true
                                 fi
                             fi
@@ -1087,9 +1091,11 @@ ensure_blue_green_configs() {
                 local route_in_config=false
                 local first_route=$(echo "$frontend_api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
                 if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
-                    # Normalize route for grep (escape special chars)
-                    local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
-                    if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                    # Normalize route for grep - escape forward slashes and other special chars
+                    # Use a simpler pattern that matches the route path in location blocks
+                    local route_escaped=$(echo "$first_route" | sed 's|/|\\/|g')
+                    # Check for location block with this route (with or without trailing slash)
+                    if grep -qE "location[[:space:]]+${route_escaped}[[:space:]]*\{|location[[:space:]]+${route_escaped}/[[:space:]]*\{" "$blue_config" "$green_config" 2>/dev/null; then
                         route_in_config=true
                     fi
                 fi
@@ -1107,9 +1113,11 @@ ensure_blue_green_configs() {
                 local route_in_config=false
                 local first_route=$(echo "$api_routes" | jq -r '.[0] // empty' 2>/dev/null || echo "")
                 if [ -n "$first_route" ] && [ "$first_route" != "null" ]; then
-                    # Normalize route for grep (escape special chars)
-                    local route_pattern=$(echo "$first_route" | sed 's/[\/&]/\\&/g')
-                    if grep -q "location.*${route_pattern}" "$blue_config" "$green_config" 2>/dev/null; then
+                    # Normalize route for grep - escape forward slashes and other special chars
+                    # Use a simpler pattern that matches the route path in location blocks
+                    local route_escaped=$(echo "$first_route" | sed 's|/|\\/|g')
+                    # Check for location block with this route (with or without trailing slash)
+                    if grep -qE "location[[:space:]]+${route_escaped}[[:space:]]*\{|location[[:space:]]+${route_escaped}/[[:space:]]*\{" "$blue_config" "$green_config" 2>/dev/null; then
                         route_in_config=true
                     fi
                 fi
