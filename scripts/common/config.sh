@@ -487,9 +487,10 @@ generate_proxy_locations() {
                         # For exact routes (like /api/users/collect-contact), use exact match
                         if [[ "$route_path" == "/api/users" ]]; then
                             # Special case: /api/users needs to preserve sub-paths for dynamic routes
-                            proxy_locations="${proxy_locations}    location ${route_path}/ {
+                            # Use prefix match without trailing slash to avoid redirect loops
+                            proxy_locations="${proxy_locations}    location ${route_path} {
         set \$FRONTEND_UPSTREAM ${frontend_upstream};
-        proxy_pass http://\$FRONTEND_UPSTREAM${route_path}/;
+        proxy_pass http://\$FRONTEND_UPSTREAM${route_path};
         include /etc/nginx/includes/common-proxy-settings.conf;
         limit_req zone=api burst=20 nodelay;
     }
