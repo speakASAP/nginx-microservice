@@ -95,7 +95,7 @@ The scripts are organized into a modular architecture for maintainability:
 **Infrastructure Service** (reverse proxy and SSL termination)
 
 |      Service    | Port |                    Description                             |
-|-----------------|------|------------------------------------------------------------|
+| --------------- | ---- | ---------------------------------------------------------- |
 | **Nginx HTTP**  |  80  | HTTP reverse proxy (exposed on host)                       |
 | **Nginx HTTPS** | 443  | HTTPS reverse proxy with SSL termination (exposed on host) |
 
