@@ -43,11 +43,24 @@ print_detail() {
 check_container_running() {
     local container_name="$1"
     
-    if ! docker ps --format "{{.Names}}" 2>/dev/null | grep -q "^${container_name}$"; then
+    # Use docker ps --filter for exact matching (more reliable than grep)
+    # This ensures we only match the exact container name
+    local container_info=$(docker ps --filter "name=^${container_name}$" --format "{{.Names}}\t{{.Status}}" 2>/dev/null || echo "")
+    
+    # If no container found, return 1 (not running)
+    if [ -z "$container_info" ]; then
         return 1
     fi
     
-    local status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^${container_name}" | awk '{print $2}' || echo "")
+    # Extract status (second field after tab)
+    local status=$(echo "$container_info" | awk -F'\t' '{print $2}' || echo "")
+    
+    # Verify we got the exact container name (first field)
+    local found_name=$(echo "$container_info" | awk -F'\t' '{print $1}' || echo "")
+    if [ "$found_name" != "$container_name" ]; then
+        # Name mismatch - shouldn't happen with --filter, but double-check
+        return 1
+    fi
     
     if [ -z "$status" ]; then
         return 1

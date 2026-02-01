@@ -59,10 +59,9 @@ start_nginx_microservice() {
     cd "$NGINX_PROJECT_DIR"
     print_detail "Working directory: $(pwd)"
     
-    # Check if nginx is already running and healthy
+    # Check if nginx container exists and is running
     local container_status=$(check_container_running "nginx-microservice")
-    local status_code=$?
-    
+    local status_code=$?  
     if [ $status_code -eq 2 ]; then
         # Container is restarting - zero tolerance, run diagnostic and exit
         print_error "nginx-microservice is in RESTARTING state - zero tolerance policy"
