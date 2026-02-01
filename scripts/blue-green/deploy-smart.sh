@@ -55,6 +55,13 @@ log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating api_routes in reg
 
 update_registry_api_routes "$SERVICE_NAME"
 
+# Backfill missing health_endpoint in registry from docker-compose healthcheck
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating health_endpoint in registry from docker-compose healthcheck"
+
+if ! update_registry_health_endpoint "$SERVICE_NAME"; then
+    log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Failed to update health_endpoint in registry, continuing with deployment"
+fi
+
 # Pre-deployment: Check for restarting containers and port conflicts
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
 

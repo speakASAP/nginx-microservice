@@ -41,6 +41,7 @@ The deployment script (`deploy-smart.sh`) will:
 
 2. **Create/update** service registry file in:
    - `nginx-microservice/service-registry/<service-name>.json`
+   - Missing `health_endpoint` is backfilled from docker-compose healthcheck during each deploy
 
 3. **Generate** nginx configuration from service registry:
    - Upstream blocks with correct container names

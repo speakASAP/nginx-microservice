@@ -421,6 +421,111 @@ except (KeyError, ValueError, IOError, json.JSONDecodeError):
     return 0
 }
 
+# Function to backfill missing health_endpoint in registry from docker-compose healthcheck
+# Ensures health checks work for services (e.g. sgiprealestate) whose registry was created without health_endpoint
+update_registry_health_endpoint() {
+    local service_name="$1"
+    local registry_file="${REGISTRY_DIR}/${service_name}.json"
+
+    if [ ! -f "$registry_file" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-health" "Registry file not found, skipping health_endpoint update"
+        return 0
+    fi
+
+    local registry=$(load_service_registry "$service_name")
+    local service_path=$(echo "$registry" | jq -r '.production_path // .service_path // empty' 2>/dev/null)
+    local compose_file=$(echo "$registry" | jq -r '.docker_compose_file // "docker-compose.blue.yml"' 2>/dev/null)
+
+    if [ -z "$service_path" ] || [ "$service_path" = "null" ] || [ ! -d "$service_path" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-health" "Production path not found or not a directory, skipping"
+        return 0
+    fi
+
+    local compose_path="${service_path}/${compose_file}"
+    if [ ! -f "$compose_path" ]; then
+        for f in "docker-compose.blue.yml" "docker-compose.yml" "docker-compose.yaml"; do
+            if [ -f "${service_path}/${f}" ]; then
+                compose_file="$f"
+                compose_path="${service_path}/${compose_file}"
+                break
+            fi
+        done
+    fi
+    if [ ! -f "$compose_path" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-health" "Docker compose file not found in ${service_path}, skipping"
+        return 0
+    fi
+
+    local compose_config=""
+    if command -v docker >/dev/null 2>&1; then
+        compose_config=$(cd "$service_path" && docker compose -f "$compose_file" config --format json 2>/dev/null || echo "")
+    fi
+    if [ -z "$compose_config" ]; then
+        log_message "WARNING" "$service_name" "deploy" "update-health" "Could not get docker compose config, skipping"
+        return 0
+    fi
+
+    local service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    if [ -z "$service_keys" ]; then
+        return 0
+    fi
+
+    local temp_file=$(mktemp)
+    if ! cp "$registry_file" "$temp_file"; then
+        log_message "ERROR" "$service_name" "deploy" "update-health" "Failed to create temporary file"
+        return 1
+    fi
+
+    local updated_count=0
+    while IFS= read -r service_key; do
+        [ -z "$service_key" ] && continue
+        local existing=$(echo "$registry" | jq -r ".services[\"$service_key\"].health_endpoint // empty" 2>/dev/null)
+        if [ -n "$existing" ] && [ "$existing" != "null" ]; then
+            continue
+        fi
+
+        local health_endpoint="/health"
+        local healthcheck_test=$(echo "$compose_config" | jq -r ".services[\"${service_key}\"].healthcheck.test[]? // empty" 2>/dev/null | grep -E '^https?://|^/' | head -1 || echo "")
+        if [ -n "$healthcheck_test" ] && [ "$healthcheck_test" != "null" ]; then
+            health_endpoint=$(echo "$healthcheck_test" | sed -E 's|^https?://[^/]+||' | sed 's|^/|/|' || echo "/")
+            [ -z "$health_endpoint" ] && health_endpoint="/"
+        elif [ "$service_key" = "frontend" ]; then
+            health_endpoint="/"
+        fi
+
+        if command -v jq >/dev/null 2>&1; then
+            if ! jq ".services[\"$service_key\"].health_endpoint = \"$health_endpoint\"" "$temp_file" > "${temp_file}.new" 2>/dev/null; then
+                log_message "WARNING" "$service_name" "deploy" "update-health" "Failed to set health_endpoint for $service_key"
+                rm -f "${temp_file}.new"
+                continue
+            fi
+            mv "${temp_file}.new" "$temp_file"
+        else
+            log_message "WARNING" "$service_name" "deploy" "update-health" "jq not found, cannot update health_endpoint"
+            rm -f "$temp_file"
+            return 0
+        fi
+        log_message "SUCCESS" "$service_name" "deploy" "update-health" "Set health_endpoint=$health_endpoint for $service_key (from docker-compose)"
+        updated_count=$((updated_count + 1))
+    done <<< "$service_keys"
+
+    if [ $updated_count -gt 0 ]; then
+        if ! jq empty "$temp_file" 2>/dev/null; then
+            log_message "ERROR" "$service_name" "deploy" "update-health" "Generated invalid JSON"
+            rm -f "$temp_file"
+            return 1
+        fi
+        if ! mv "$temp_file" "$registry_file"; then
+            log_message "ERROR" "$service_name" "deploy" "update-health" "Failed to write updated registry"
+            rm -f "$temp_file"
+            return 1
+        fi
+    else
+        rm -f "$temp_file"
+    fi
+    return 0
+}
+
 # Function to auto-create service registry from service directory
 # This is called when registry file doesn't exist during deployment
 auto_create_service_registry() {

@@ -29,12 +29,23 @@ server {
     }
 }
 
-# HTTPS Server
+# HTTPS Server - Redirect www to canonical (non-www)
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
-    server_name {{DOMAIN_NAME}} www.{{DOMAIN_NAME}};
-    
+    server_name www.{{DOMAIN_NAME}};
+    ssl_certificate /etc/nginx/certs/{{DOMAIN_NAME}}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/{{DOMAIN_NAME}}/privkey.pem;
+    include /etc/nginx/includes/common-server-settings.conf;
+    return 301 https://{{DOMAIN_NAME}}$request_uri;
+}
+
+# HTTPS Server - Main site (canonical domain only)
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {{DOMAIN_NAME}};
+
     # SSL Configuration
     # Common SSL settings (protocols, ciphers, session cache) are in nginx.conf
     # Only domain-specific certificate paths are configured here

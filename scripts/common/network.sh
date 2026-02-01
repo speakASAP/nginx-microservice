@@ -134,11 +134,26 @@ check_https_url() {
         fi
     done
     
-    # All attempts failed - add comprehensive diagnostics
+    # All external attempts failed - try internal check (localhost with Host header)
+    # Fixes false failures when server cannot reach its own public URL (NAT hairpinning, firewall, DNS)
+    local internal_response
+    internal_response=$(curl -k -s -w "\nHTTP_CODE:%{http_code}" --max-time "$timeout" -H "Host: ${domain}" "https://127.0.0.1${endpoint}" 2>&1) || true
+    local internal_code
+    internal_code=$(echo "$internal_response" | grep "HTTP_CODE:" | cut -d: -f2 || echo "000")
+    if [ -n "$internal_code" ] && [ "$internal_code" != "000" ] && [ "$internal_code" -ge 200 ] && [ "$internal_code" -lt 500 ]; then
+        if [ -n "$service_name" ]; then
+            if type log_message >/dev/null 2>&1; then
+                log_message "SUCCESS" "$service_name" "$color" "https-check" "HTTPS check passed via internal fallback (Host: $domain): HTTP $internal_code (external check failed - NAT/firewall)"
+            fi
+        fi
+        return 0
+    fi
+
+    # All attempts including internal fallback failed - add comprehensive diagnostics
     if [ -n "$service_name" ]; then
         if type log_message >/dev/null 2>&1; then
             log_message "ERROR" "$service_name" "$color" "https-check" "HTTPS check failed: $url (all $retries attempts failed)"
-            
+
             # Add comprehensive diagnostics
             diagnose_https_failure "$domain" "$service_name" "$color" "$url"
         fi
