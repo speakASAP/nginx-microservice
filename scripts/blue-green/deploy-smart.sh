@@ -65,7 +65,8 @@ fi
 # Pre-deployment: Check for restarting containers and port conflicts
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Pre-deployment: Checking for restarting containers and port conflicts"
 
-# Load service registry to get container names and ports
+# Load service registry to get container names and ports (keep service name for Phase 0+)
+ORIG_SERVICE_NAME="$SERVICE_NAME"
 REGISTRY=$(load_service_registry "$SERVICE_NAME")
 SERVICE_KEYS=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
 
@@ -108,7 +109,8 @@ if [ -n "$SERVICE_KEYS" ]; then
     done <<< "$SERVICE_KEYS"
 fi
 
-# Phase 0: Ensure shared infrastructure is running
+# Phase 0: Ensure shared infrastructure is running (use ORIG_SERVICE_NAME in case loop overwrote SERVICE_NAME)
+SERVICE_NAME="$ORIG_SERVICE_NAME"
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 0: Ensuring shared infrastructure is running"
 
 if ! "${SCRIPT_DIR}/ensure-infrastructure.sh" "$SERVICE_NAME"; then

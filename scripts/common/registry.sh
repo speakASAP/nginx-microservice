@@ -2,10 +2,12 @@
 # Service Registry Functions
 # Functions for loading and querying service registry
 
-# Source base paths
+# Source base paths (SCRIPT_DIR always set for output.sh; REGISTRY_DIR only if not set by caller e.g. utils.sh)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-REGISTRY_DIR="${NGINX_PROJECT_DIR}/service-registry"
+if [ -z "${REGISTRY_DIR:-}" ]; then
+    NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    REGISTRY_DIR="${NGINX_PROJECT_DIR}/service-registry"
+fi
 
 # Source output functions
 if [ -f "${SCRIPT_DIR}/output.sh" ]; then

@@ -12,6 +12,7 @@ source "${SCRIPT_DIR}/utils.sh"
 SCRIPT_DIR="$PREPARE_SCRIPT_DIR"
 
 SERVICE_NAME="$1"
+ORIG_SERVICE_NAME="$1"
 
 if [ -z "$SERVICE_NAME" ]; then
     print_error "Usage: prepare-green-smart.sh <service_name>"
@@ -52,7 +53,8 @@ fi
 
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Starting smart preparation of $PREPARE_COLOR deployment"
 
-# Ensure shared infrastructure is running
+# Ensure shared infrastructure is running (use ORIG_SERVICE_NAME in case something overwrote SERVICE_NAME)
+SERVICE_NAME="$ORIG_SERVICE_NAME"
 log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Ensuring shared infrastructure is running"
 
 if ! "${SCRIPT_DIR}/ensure-infrastructure.sh" "$SERVICE_NAME"; then

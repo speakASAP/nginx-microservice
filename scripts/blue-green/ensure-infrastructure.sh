@@ -111,21 +111,19 @@ if [ ! -f "$INFRASTRUCTURE_COMPOSE" ]; then
     # Check for shared database-server (db-server-postgres, db-server-redis)
     if docker ps --format "{{.Names}}" | grep -q "^db-server-postgres$"; then
         log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Using shared database-server (db-server-postgres)"
-        POSTGRES_RUNNING=true
-        REDIS_RUNNING=$(docker ps --format "{{.Names}}" | grep -q "^db-server-redis$" && echo true || echo false)
-        if [ "$REDIS_RUNNING" = "false" ]; then
-            log_message "WARNING" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is not running"
-        else
-            log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Shared Redis (db-server-redis) is running"
-        fi
         log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Shared infrastructure is available"
         exit 0
-    else
-        print_error "Infrastructure compose file not found: $INFRASTRUCTURE_COMPOSE"
-        print_error "And shared database-server is not running"
-        print_error "Either start database-server or ensure docker-compose.infrastructure.yml exists"
-        exit 1
     fi
+    # Shared DB not running: try to start database-server (service may use shared DB via env/DATABASE_URL)
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "start" "Shared database-server not running, attempting to start it..."
+    if bash "${SCRIPT_DIR}/start-database-server.sh"; then
+        log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "start" "database-server started successfully"
+        exit 0
+    fi
+    print_error "Infrastructure compose file not found: $INFRASTRUCTURE_COMPOSE"
+    print_error "And shared database-server is not running (start failed)"
+    print_error "Either start database-server manually or add docker-compose.infrastructure.yml to the service"
+    exit 1
 fi
 
 # Service-specific infrastructure (only used if service doesn't use shared services)
