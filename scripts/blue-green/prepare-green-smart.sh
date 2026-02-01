@@ -246,13 +246,14 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
     
-    # For flipflop application, build sequentially to avoid CPU overload
-    # Other applications continue to build in parallel for speed
-    if [ "$SERVICE_NAME" = "flipflop" ]; then
+    # For flipflop and ai-microservice, build sequentially to avoid CPU/memory overload.
+    # Parallel "exporting to image" can cause OOM and "Connection closed by remote host".
+    # Other applications continue to build in parallel for speed.
+    if [ "$SERVICE_NAME" = "flipflop" ] || [ "$SERVICE_NAME" = "ai-microservice" ]; then
         SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
-        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (flipflop): ${SERVICES_STRING}"
+        log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (${SERVICE_NAME}): ${SERVICES_STRING}"
         
-        # Build services one by one to reduce CPU load
+        # Build services one by one to reduce CPU and memory load
         failed_builds=()
         for service in "${SERVICES_TO_BUILD[@]}"; do
             log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building service: $service"
@@ -269,7 +270,7 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
             exit 1
         fi
         
-        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (sequential build for flipflop)"
+        log_message "SUCCESS" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "All services built successfully (sequential build for ${SERVICE_NAME})"
     else
         # Build all services at once - Docker Compose automatically parallelizes independent builds
         # This is much faster than building sequentially
