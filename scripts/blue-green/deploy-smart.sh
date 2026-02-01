@@ -18,6 +18,11 @@ if [ -z "$SERVICE_NAME" ]; then
     exit 1
 fi
 
+# Resolve domain to service name (e.g. sgipreal.com -> sgiprealestate)
+if type resolve_service_name >/dev/null 2>&1; then
+    SERVICE_NAME=$(resolve_service_name "$SERVICE_NAME")
+fi
+
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Starting smart blue/green deployment"
 
 # Capture deployment start time

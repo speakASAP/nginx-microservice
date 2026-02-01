@@ -21,6 +21,33 @@ else
     }
 fi
 
+# Resolve service name: if argument is a domain (e.g. sgipreal.com), find registry whose .domain matches
+# and return that service name (e.g. sgiprealestate). Otherwise return argument unchanged.
+resolve_service_name() {
+    local arg="$1"
+    if [ -z "$arg" ]; then
+        echo "$arg"
+        return
+    fi
+    local registry_file="${REGISTRY_DIR}/${arg}.json"
+    if [ -f "$registry_file" ]; then
+        echo "$arg"
+        return
+    fi
+    if [[ "$arg" == *.* ]]; then
+        for f in "${REGISTRY_DIR}"/*.json; do
+            [ -f "$f" ] || continue
+            local domain=""
+            domain=$(jq -r '.domain // empty' "$f" 2>/dev/null) || true
+            if [ "$domain" = "$arg" ]; then
+                echo "$(basename "$f" .json)"
+                return
+            fi
+        done
+    fi
+    echo "$arg"
+}
+
 # Function to load service registry
 load_service_registry() {
     local service_name="$1"
@@ -31,9 +58,14 @@ load_service_registry() {
         exit 1
     fi
     
-    # Source jq or use python for JSON parsing
     if command -v jq >/dev/null 2>&1; then
-        cat "$registry_file"
+        local content
+        content=$(cat "$registry_file")
+        if ! echo "$content" | jq -e . >/dev/null 2>&1; then
+            print_error "Registry file contains invalid JSON: $registry_file"
+            exit 1
+        fi
+        echo "$content"
     elif command -v python3 >/dev/null 2>&1; then
         python3 -c "import json, sys; print(json.dumps(json.load(open('$registry_file'))))"
     else
