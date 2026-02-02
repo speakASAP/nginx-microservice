@@ -46,6 +46,9 @@ server {
     listen [::]:443 ssl;
     server_name {{DOMAIN_NAME}};
 
+    # Per-service upload size override (from nginx.config.json, defaults to 100M)
+    client_max_body_size {{CLIENT_MAX_BODY_SIZE}};
+
     # SSL Configuration
     # Common SSL settings (protocols, ciphers, session cache) are in nginx.conf
     # Only domain-specific certificate paths are configured here

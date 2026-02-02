@@ -60,6 +60,10 @@ log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating api_routes in reg
 
 update_registry_api_routes "$SERVICE_NAME"
 
+# Update nginx settings (client_max_body_size) from application's nginx.config.json
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating nginx settings from nginx.config.json"
+update_registry_nginx_settings "$SERVICE_NAME"
+
 # Backfill missing health_endpoint in registry from docker-compose healthcheck
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Updating health_endpoint in registry from docker-compose healthcheck"
 

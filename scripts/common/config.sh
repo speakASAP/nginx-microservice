@@ -772,15 +772,18 @@ generate_blue_green_configs() {
         return 1
     fi
     
+    # Get client_max_body_size from registry (from nginx.config.json, default 100M)
+    local client_max_body_size=$(echo "$registry" | jq -r '.nginx.client_max_body_size // "100M"' 2>/dev/null || echo "100M")
+
     # Generate configs using Python for reliable multi-line replacement
     # Use temporary files to pass multi-line content to Python
     local temp_upstreams=$(mktemp)
     local temp_locations=$(mktemp)
     local temp_python=$(mktemp)
-    
+
     echo "$blue_upstreams" > "$temp_upstreams"
     echo "$blue_proxy_locations" > "$temp_locations"
-    
+
     # Create Python script
     cat > "$temp_python" <<'PYTHON_SCRIPT'
 import sys
@@ -791,41 +794,44 @@ output_file = sys.argv[2]
 domain = sys.argv[3]
 upstreams_file = sys.argv[4]
 locations_file = sys.argv[5]
+client_max_body_size = sys.argv[6] if len(sys.argv) > 6 else "100M"
 
 try:
     # Read template
     with open(template_file, 'r') as f:
         template = f.read()
-    
+
     # Read upstream blocks and proxy locations
     with open(upstreams_file, 'r') as f:
         upstreams = f.read()
-    
+
     with open(locations_file, 'r') as f:
         locations = f.read()
-    
+
     # Replace placeholders
     template = template.replace('{{DOMAIN_NAME}}', domain)
     template = template.replace('{{UPSTREAM_BLOCKS}}', upstreams)
     template = template.replace('{{PROXY_LOCATIONS}}', locations)
-    
+    template = template.replace('{{CLIENT_MAX_BODY_SIZE}}', client_max_body_size)
+
     # Write output
     with open(output_file, 'w') as f:
         f.write(template)
-    
+
 except Exception as e:
     sys.stderr.write(f"Error generating config: {e}\n")
     sys.exit(1)
 PYTHON_SCRIPT
-    
+
     # Generate blue config to staging
     if command -v python3 >/dev/null 2>&1; then
-        python3 "$temp_python" "$template_file" "$blue_staging" "$domain" "$temp_upstreams" "$temp_locations" || {
+        python3 "$temp_python" "$template_file" "$blue_staging" "$domain" "$temp_upstreams" "$temp_locations" "$client_max_body_size" || {
             print_error "Python3 failed, falling back to sed"
             # Fallback to sed (simple replacement, may have multi-line issues)
             sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
                 -e "s|{{UPSTREAM_BLOCKS}}|$blue_upstreams|g" \
                 -e "s|{{PROXY_LOCATIONS}}|$blue_proxy_locations|g" \
+                -e "s|{{CLIENT_MAX_BODY_SIZE}}|$client_max_body_size|g" \
                 "$template_file" > "$blue_staging"
         }
     else
@@ -833,21 +839,23 @@ PYTHON_SCRIPT
         sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
             -e "s|{{UPSTREAM_BLOCKS}}|$blue_upstreams|g" \
             -e "s|{{PROXY_LOCATIONS}}|$blue_proxy_locations|g" \
+            -e "s|{{CLIENT_MAX_BODY_SIZE}}|$client_max_body_size|g" \
             "$template_file" > "$blue_staging"
     fi
-    
+
     # Update upstreams and locations for green config
     echo "$green_upstreams" > "$temp_upstreams"
     echo "$green_proxy_locations" > "$temp_locations"
-    
+
     # Generate green config to staging
     if command -v python3 >/dev/null 2>&1; then
-        python3 "$temp_python" "$template_file" "$green_staging" "$domain" "$temp_upstreams" "$temp_locations" || {
+        python3 "$temp_python" "$template_file" "$green_staging" "$domain" "$temp_upstreams" "$temp_locations" "$client_max_body_size" || {
             print_error "Python3 failed, falling back to sed"
             # Fallback to sed
             sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
                 -e "s|{{UPSTREAM_BLOCKS}}|$green_upstreams|g" \
                 -e "s|{{PROXY_LOCATIONS}}|$green_proxy_locations|g" \
+                -e "s|{{CLIENT_MAX_BODY_SIZE}}|$client_max_body_size|g" \
                 "$template_file" > "$green_staging"
         }
     else
@@ -855,6 +863,7 @@ PYTHON_SCRIPT
         sed -e "s|{{DOMAIN_NAME}}|$domain|g" \
             -e "s|{{UPSTREAM_BLOCKS}}|$green_upstreams|g" \
             -e "s|{{PROXY_LOCATIONS}}|$green_proxy_locations|g" \
+            -e "s|{{CLIENT_MAX_BODY_SIZE}}|$client_max_body_size|g" \
             "$template_file" > "$green_staging"
     fi
     

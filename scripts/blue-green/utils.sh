@@ -137,6 +137,49 @@ check_docker_compose_available() {
     return 0
 }
 
+# Function to update nginx settings in registry from application's nginx.config.json
+# Reads client_max_body_size from nginx.config.json (used by sgiprealestate for large uploads)
+update_registry_nginx_settings() {
+    local service_name="$1"
+    local registry_file="${REGISTRY_DIR}/${service_name}.json"
+
+    if [ ! -f "$registry_file" ]; then
+        return 0
+    fi
+
+    local service_path=$(echo "$(load_service_registry "$service_name")" | jq -r '.production_path // empty' 2>/dev/null || echo "")
+    if [ -z "$service_path" ] || [ "$service_path" = "null" ] || [ ! -d "$service_path" ]; then
+        return 0
+    fi
+
+    local nginx_config="${service_path}/nginx.config.json"
+    if [ ! -f "$nginx_config" ] || [ ! -r "$nginx_config" ]; then
+        return 0
+    fi
+
+    local client_max_body_size=""
+    if command -v jq >/dev/null 2>&1; then
+        client_max_body_size=$(jq -r '.nginx.client_max_body_size // empty' "$nginx_config" 2>/dev/null || echo "")
+    fi
+
+    if [ -z "$client_max_body_size" ] || [ "$client_max_body_size" = "null" ]; then
+        return 0
+    fi
+
+    if command -v jq >/dev/null 2>&1; then
+        local temp_file=$(mktemp)
+        if jq --arg size "$client_max_body_size" '.nginx.client_max_body_size = $size' "$registry_file" > "$temp_file" 2>/dev/null; then
+            if jq empty "$temp_file" 2>/dev/null; then
+                mv "$temp_file" "$registry_file"
+                log_message "SUCCESS" "$service_name" "deploy" "update-nginx" "Set client_max_body_size=${client_max_body_size} from nginx.config.json"
+                return 0
+            fi
+        fi
+        rm -f "$temp_file"
+    fi
+    return 0
+}
+
 # Function to update api_routes in registry from nginx-api-routes.conf
 # Universal function that works for all microservices
 # Looks for nginx-api-routes.conf in service directory or nginx/ subdirectory
