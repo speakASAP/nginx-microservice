@@ -8,6 +8,10 @@
 
 # Certificates (sensitive data)
 certificates/
+
+# Cloudflare/DNS API credentials for wildcard certs (DNS-01)
+secrets/*
+!secrets/.gitkeep
 *.pem
 *.key
 *.crt

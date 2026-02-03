@@ -235,13 +235,16 @@ For detailed information, see **[Container and Nginx Synchronization Guide](docs
 ### Manual Certificate Operations
 
 ```bash
-# Request certificate
+# Request single-domain certificate (webroot)
 docker compose run --rm certbot /scripts/request-cert.sh <domain> [email]
+
+# Request wildcard certificate (DNS-01, e.g. *.sgipreal.com)
+docker compose run --rm certbot /scripts/request-cert-wildcard.sh <base_domain> [email]
 
 # Check certificate expiry
 docker compose run --rm certbot /scripts/check-cert-expiry.sh [domain]
 
-# Renew certificates
+# Renew all certificates (webroot + DNS-01)
 docker compose run --rm certbot /scripts/renew-cert.sh
 ```
 
@@ -335,7 +338,9 @@ DEFAULT_DOMAIN_SUFFIX=example.com        # Optional: Default domain suffix for a
 
 4. **MULTI_DOMAIN_SERVICE_NAME**: If you have a service that handles multiple domains (like the statex service), set this to that service name. Defaults to "statex" for backward compatibility.
 
-5. **DEFAULT_DOMAIN_SUFFIX**: Optional. Used for:
+5. **WILDCARD_CERT_DOMAINS**: Optional. Space-separated base domains that have a wildcard cert (e.g. `sgipreal.com`). When set, subdomains (e.g. `database-server.sgipreal.com`) use the wildcard cert via symlink; no single-domain cert is requested. Requires one-time wildcard request via `request-cert-wildcard.sh` and `secrets/cloudflare.ini` for DNS-01.
+
+6. **DEFAULT_DOMAIN_SUFFIX**: Optional. Used for:
    - Fallback when a service's domain cannot be detected from its `.env` file
    - **Default landing page**: Automatically sets up a default landing page with SSL certificate for this domain on new deployments
    - It's recommended to explicitly set the `DOMAIN` variable in each service's `.env` file instead of relying on auto-generation
@@ -491,27 +496,65 @@ Each domain has two certificate files in `./certificates/<domain>/`:
   - Required for SSL/TLS encryption
   - Permissions: `600` (only readable by owner)
 
+### Wildcard certificates (DNS-01) — recommended for many subdomains
+
+**Strategy**: One certificate `*.sgipreal.com` (plus apex `sgipreal.com`) instead of many single-domain certs.
+
+- ✅ Scales: add subdomains without re-issuing certs
+- ✅ DNS-01 challenge (no HTTP/webroot needed for validation)
+- ✅ Same cert used for all `*.sgipreal.com` via symlinks
+
+**Setup**:
+
+1. **DNS at Cloudflare** (or use another certbot DNS plugin and adapt `request-cert-wildcard.sh`).
+2. **Create API token**: Cloudflare Dashboard → My Profile → API Tokens → Create Token, template "Edit zone DNS", zone scope for your domain. Copy the token.
+3. **Credentials file** (not in .env — keep secret):
+
+   ```bash
+   mkdir -p secrets
+   echo "dns_cloudflare_api_token = YOUR_TOKEN" > secrets/cloudflare.ini
+   chmod 600 secrets/cloudflare.ini
+   ```
+
+4. **Request wildcard once** (from nginx-microservice directory):
+
+   ```bash
+   docker compose run --rm certbot /scripts/request-cert-wildcard.sh sgipreal.com
+   ```
+
+   This issues `*.sgipreal.com` and `sgipreal.com` and stores it in `./certificates/sgipreal.com/`.
+5. **Configure .env**:
+
+   ```bash
+   WILDCARD_CERT_DOMAINS=sgipreal.com
+   ```
+
+6. **Deployments**: For any service domain like `database-server.sgipreal.com`, `ensure_ssl_certificate` will create a symlink `certificates/database-server.sgipreal.com` → `sgipreal.com` and nginx will use the wildcard cert. No per-subdomain cert requests.
+
+**Renewal**: `renew-cert.sh` uses `certbot renew`, which renews both webroot and DNS-01 certs using their original challenge type. Ensure `secrets/cloudflare.ini` is mounted (default docker-compose mounts `./secrets`).
+
 ### Certificate Request Flow
 
 When requesting a certificate (via `add-domain.sh` or manually):
 
 1. **Check existing certificate**: Script checks if certificate exists in `./certificates/<domain>/`
 2. **Validate expiration**: If certificate exists, checks if it expires in < 30 days
-3. **Request new certificate**: If needed, requests from Let's Encrypt using webroot validation
+3. **Pre-certbot DNS check (mandatory)**: Before calling certbot, the script verifies that the domain resolves to an IP. If not, certbot is **not** run (to avoid wasting Let's Encrypt rate limits). On server or locally run: `dig <domain> +short` or `nslookup <domain>` — if no IP is returned, fix DNS first.
+4. **Request new certificate**: If needed, requests from Let's Encrypt using webroot validation
    - Certbot places challenge file in `/var/www/html/.well-known/acme-challenge/`
    - Nginx serves this file to prove domain ownership
    - Let's Encrypt validates and issues certificate
-4. **Copy to host**: `request-cert.sh` copies certificate files to `./certificates/<domain>/`
+5. **Copy to host**: `request-cert.sh` copies certificate files to `./certificates/<domain>/`
    - Uses `cp -L` to follow symlinks and copy actual files
    - Sets proper file permissions (644 for fullchain, 600 for privkey)
-5. **Nginx configuration**: Update nginx config to reference:
+6. **Nginx configuration**: Update nginx config to reference:
 
    ```nginx
    ssl_certificate /etc/nginx/certs/<domain>/fullchain.pem;
    ssl_certificate_key /etc/nginx/certs/<domain>/privkey.pem;
    ```
 
-6. **Reload nginx**: Certificate is immediately available after nginx reload
+7. **Reload nginx**: Certificate is immediately available after nginx reload
 
 ### Certificate Renewal
 
@@ -562,17 +605,26 @@ openssl x509 -enddate -noout -in certificates/<domain>/fullchain.pem
 
 #### Certificate Request Fails
 
-**Common causes**:
+**Pre-certbot check (mandatory)**: The script refuses to run certbot if the domain does not resolve to an IP (to avoid wasting Let's Encrypt rate limits). Before requesting a certificate, verify DNS on the server or locally:
 
-- DNS not pointing to server: `dig <domain>` should return server IP
+```bash
+dig <domain> +short
+# OR
+nslookup <domain>
+```
+
+If no IP is returned, fix DNS first; do not run certbot until the domain resolves.
+
+**Other common causes**:
+
 - Port 80 not accessible: Let's Encrypt needs HTTP access for validation
 - Rate limiting: Let's Encrypt has rate limits (50 certs/week per domain)
 
 **Debug steps**:
 
 ```bash
-# Check DNS
-dig <domain>
+# Check DNS (must return an IP)
+dig <domain> +short
 
 # Test HTTP access
 curl http://<domain>/.well-known/acme-challenge/test

@@ -31,7 +31,8 @@ services:
       retries: 2
 
   certbot:
-    image: ${CERTBOT_IMAGE:-certbot/certbot:latest}
+    # Use certbot/dns-cloudflare for wildcard certs (DNS-01); supports webroot too
+    image: ${CERTBOT_IMAGE:-certbot/dns-cloudflare:latest}
     container_name: nginx-certbot
     restart: unless-stopped
     volumes:
@@ -39,6 +40,8 @@ services:
       - ./webroot:/var/www/html:rw
       - ${DOCKER_VOLUMES_BASE_PATH:-/srv/storagebox/statex/docker-volumes/nginx-microservice}/logs/certbot:/var/log/certbot:rw
       - ./certbot/scripts:/scripts:ro
+      # For wildcard (DNS-01): create secrets/cloudflare.ini with dns_cloudflare_api_token=YOUR_TOKEN
+      - ./secrets:/etc/letsencrypt/secrets:ro
     deploy:
       resources:
         limits:

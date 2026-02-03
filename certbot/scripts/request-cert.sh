@@ -70,6 +70,21 @@ if [ "$STAGING" = "true" ]; then
     echo "Using Let's Encrypt staging environment"
 fi
 
+# Mandatory pre-certbot check: domain must resolve to an IP (avoids wasting Let's Encrypt rate limits)
+# On server or locally run: dig <domain> +short  OR  nslookup <domain>
+RESOLVED_IP=""
+if command -v getent >/dev/null 2>&1; then
+    RESOLVED_IP=$(getent hosts "$DOMAIN" 2>/dev/null | head -1 | awk '{print $1}')
+elif command -v nslookup >/dev/null 2>&1; then
+    # Take last Address line (domain IP); strip #port from resolver line
+    RESOLVED_IP=$(nslookup "$DOMAIN" 2>/dev/null | awk '/^Address: / { gsub(/#.*/,"",$2); print $2 }' | tail -1)
+fi
+if [ -z "$RESOLVED_IP" ]; then
+    echo "Error: Domain ${DOMAIN} does not resolve to an IP. Do not run certbot until DNS is correct (you will waste Let's Encrypt rate limits)."
+    echo "Check on server or locally: dig ${DOMAIN} +short   OR   nslookup ${DOMAIN}"
+    exit 1
+fi
+
 # Request certificate from Let's Encrypt
 # Uses webroot validation: certbot places challenge files in /var/www/html/.well-known/acme-challenge/
 # Nginx serves these files to prove domain ownership

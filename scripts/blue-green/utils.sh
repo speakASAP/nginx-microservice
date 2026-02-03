@@ -906,23 +906,56 @@ auto_create_service_registry() {
 ensure_ssl_certificate() {
     local domain="$1"
     local service_name="${2:-}"
-    
+
     if [ -z "$domain" ] || [ "$domain" = "null" ]; then
         return 0  # No domain, no certificate needed
     fi
-    
+
     local cert_dir="${NGINX_PROJECT_DIR}/certificates/${domain}"
     local fullchain="${cert_dir}/fullchain.pem"
     local privkey="${cert_dir}/privkey.pem"
-    
-    # Check if certificate already exists
+
+    # Check if certificate already exists (real cert or symlink to wildcard)
     if [ -f "$fullchain" ] && [ -f "$privkey" ]; then
         if type log_message >/dev/null 2>&1; then
             log_message "SUCCESS" "$service_name" "cert" "check" "Certificate exists for domain: $domain"
         fi
         return 0
     fi
-    
+
+    # Wildcard cert: if domain is covered by WILDCARD_CERT_DOMAINS and base cert exists, use symlink
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    if [ -n "${WILDCARD_CERT_DOMAINS:-}" ]; then
+        for base in $WILDCARD_CERT_DOMAINS; do
+            if [ "$domain" = "$base" ] || [ "${domain%.$base}" != "$domain" ]; then
+                local base_fullchain="${NGINX_PROJECT_DIR}/certificates/${base}/fullchain.pem"
+                local base_privkey="${NGINX_PROJECT_DIR}/certificates/${base}/privkey.pem"
+                if [ -f "$base_fullchain" ] && [ -f "$base_privkey" ]; then
+                    local cert_dir_parent="${NGINX_PROJECT_DIR}/certificates"
+                    if [ -L "${cert_dir_parent}/${domain}" ]; then
+                        if type log_message >/dev/null 2>&1; then
+                            log_message "SUCCESS" "$service_name" "cert" "check" "Wildcard cert symlink exists for: $domain"
+                        fi
+                        return 0
+                    fi
+                    if [ -d "${cert_dir_parent}/${domain}" ] && [ ! -L "${cert_dir_parent}/${domain}" ]; then
+                        rm -rf "${cert_dir_parent}/${domain}"
+                    fi
+                    ln -sfn "$base" "${cert_dir_parent}/${domain}"
+                    if type log_message >/dev/null 2>&1; then
+                        log_message "SUCCESS" "$service_name" "cert" "check" "Using wildcard cert for domain: $domain (symlink to $base)"
+                    fi
+                    return 0
+                fi
+                break
+            fi
+        done
+    fi
+
     # Certificate doesn't exist - create temporary self-signed certificate
     # This allows nginx to start so we can request the real certificate
     if type log_message >/dev/null 2>&1; then
