@@ -40,6 +40,62 @@ else
     exit 1
 fi
 
+# Ensure SSL certificate exists for the domain (run for every service with a domain,
+# including those using shared DB, so Let's Encrypt is requested instead of keeping self-signed)
+DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
+if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Checking SSL certificate for domain: $DOMAIN"
+    CERT_DIR="${NGINX_PROJECT_DIR}/certificates/${DOMAIN}"
+    FULLCHAIN="${CERT_DIR}/fullchain.pem"
+    PRIVKEY="${CERT_DIR}/privkey.pem"
+
+    if type ensure_ssl_certificate >/dev/null 2>&1; then
+        ensure_ssl_certificate "$DOMAIN" "$SERVICE_NAME"
+    fi
+
+    if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
+        CERT_DAYS=$(openssl x509 -enddate -noout -in "$FULLCHAIN" 2>/dev/null | cut -d= -f2)
+        if [ -n "$CERT_DAYS" ]; then
+            CERT_EPOCH=$(date -d "$CERT_DAYS" +%s 2>/dev/null || date -j -f "%b %d %H:%M:%S %Y %Z" "$CERT_DAYS" +%s 2>/dev/null || echo "0")
+            CURRENT_EPOCH=$(date +%s)
+            DAYS_VALID=$(( ($CERT_EPOCH - $CURRENT_EPOCH) / 86400 ))
+
+            if [ "$DAYS_VALID" -lt 30 ]; then
+                log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Temporary certificate found for domain: $DOMAIN"
+                log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Requesting real certificate from Let's Encrypt..."
+
+                EMAIL=$(echo "$REGISTRY" | jq -r '.certbot_email // empty' 2>/dev/null)
+                if [ -z "$EMAIL" ] || [ "$EMAIL" = "null" ]; then
+                    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+                        set -a
+                        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+                        set +a
+                    fi
+                    EMAIL="${CERTBOT_EMAIL:-admin@example.com}"
+                fi
+
+                if docker compose -f "${NGINX_PROJECT_DIR}/docker-compose.yml" run --rm certbot /scripts/request-cert.sh "$DOMAIN" "$EMAIL"; then
+                    log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate requested successfully for $DOMAIN"
+                    if type reload_nginx >/dev/null 2>&1; then
+                        reload_nginx || true
+                    fi
+                else
+                    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Failed to request certificate for $DOMAIN (using temporary certificate)"
+                    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "You can request certificate manually: docker compose run --rm certbot /scripts/request-cert.sh $DOMAIN $EMAIL"
+                fi
+            else
+                log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate exists for domain: $DOMAIN"
+            fi
+        else
+            log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate exists for domain: $DOMAIN"
+        fi
+    else
+        log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Certificate not found for domain: $DOMAIN (ensure_ssl_certificate should have created it)"
+    fi
+else
+    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "No domain configured in registry, skipping certificate check"
+fi
+
 log_message "INFO" "$SERVICE_NAME" "infrastructure" "check" "Checking shared infrastructure status"
 
 # Check if service uses shared services from registry
@@ -256,72 +312,6 @@ if [ "$POSTGRES_RUNNING" = false ] || [ "$REDIS_RUNNING" = false ]; then
     log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "start" "Infrastructure is healthy and ready"
 else
     log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "check" "Infrastructure is already running"
-fi
-
-# Ensure SSL certificate exists for the domain
-log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Checking SSL certificate for domain"
-
-# Get domain from registry
-DOMAIN=$(echo "$REGISTRY" | jq -r '.domain // empty' 2>/dev/null)
-
-if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "null" ]; then
-    CERT_DIR="${NGINX_PROJECT_DIR}/certificates/${DOMAIN}"
-    FULLCHAIN="${CERT_DIR}/fullchain.pem"
-    PRIVKEY="${CERT_DIR}/privkey.pem"
-    
-    # First, ensure certificate exists (with temporary fallback if needed)
-    if type ensure_ssl_certificate >/dev/null 2>&1; then
-        ensure_ssl_certificate "$DOMAIN" "$SERVICE_NAME"
-    fi
-    
-    # Check if we have a temporary self-signed certificate or real certificate
-    if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
-        # Check if it's a temporary self-signed certificate (valid for 1 day)
-        CERT_DAYS=$(openssl x509 -enddate -noout -in "$FULLCHAIN" 2>/dev/null | cut -d= -f2)
-        if [ -n "$CERT_DAYS" ]; then
-            CERT_EPOCH=$(date -d "$CERT_DAYS" +%s 2>/dev/null || date -j -f "%b %d %H:%M:%S %Y %Z" "$CERT_DAYS" +%s 2>/dev/null || echo "0")
-            CURRENT_EPOCH=$(date +%s)
-            DAYS_VALID=$(( ($CERT_EPOCH - $CURRENT_EPOCH) / 86400 ))
-            
-            # If certificate is valid for less than 30 days, it's likely temporary
-            if [ $DAYS_VALID -lt 30 ]; then
-                log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Temporary certificate found for domain: $DOMAIN"
-                log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "Requesting real certificate from Let's Encrypt..."
-                
-                # Get email from registry or use default
-                EMAIL=$(echo "$REGISTRY" | jq -r '.certbot_email // empty' 2>/dev/null)
-                if [ -z "$EMAIL" ] || [ "$EMAIL" = "null" ]; then
-                    # Load .env file to get CERTBOT_EMAIL
-                    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
-                        set -a
-                        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
-                        set +a
-                    fi
-                    EMAIL="${CERTBOT_EMAIL:-admin@example.com}"
-                fi
-                
-                # Request certificate via certbot container
-                if docker compose -f "${NGINX_PROJECT_DIR}/docker-compose.yml" run --rm certbot /scripts/request-cert.sh "$DOMAIN" "$EMAIL"; then
-                    log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate requested successfully for $DOMAIN"
-                    # Reload nginx to use the new certificate
-                    if type reload_nginx >/dev/null 2>&1; then
-                        reload_nginx || true
-                    fi
-                else
-                    log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Failed to request certificate for $DOMAIN (using temporary certificate)"
-                    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "You can request certificate manually: docker compose run --rm certbot /scripts/request-cert.sh $DOMAIN $EMAIL"
-                fi
-            else
-                log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate exists for domain: $DOMAIN"
-            fi
-        else
-            log_message "SUCCESS" "$SERVICE_NAME" "infrastructure" "cert" "Certificate exists for domain: $DOMAIN"
-        fi
-    else
-        log_message "WARNING" "$SERVICE_NAME" "infrastructure" "cert" "Certificate not found for domain: $DOMAIN (ensure_ssl_certificate should have created it)"
-    fi
-else
-    log_message "INFO" "$SERVICE_NAME" "infrastructure" "cert" "No domain configured in registry, skipping certificate check"
 fi
 
 exit 0

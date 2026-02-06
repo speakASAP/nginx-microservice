@@ -36,12 +36,11 @@ if [ ! -f "$CF_CREDENTIALS" ]; then
 fi
 
 # Check if wildcard cert already exists and is valid (> 30 days)
+# Use openssl -checkend (portable; avoids date -d which fails on Alpine/busybox)
+SECONDS_30_DAYS=2592000
 if [ -f "$FULLCHAIN" ] && [ -f "$PRIVKEY" ]; then
-    EXPIRY_DATE=$(openssl x509 -enddate -noout -in "$FULLCHAIN" | cut -d= -f2)
-    EXPIRY_EPOCH=$(date -d "$EXPIRY_DATE" +%s)
-    CURRENT_EPOCH=$(date +%s)
-    DAYS_UNTIL_EXPIRY=$(( ($EXPIRY_EPOCH - $CURRENT_EPOCH) / 86400 ))
-    if [ $DAYS_UNTIL_EXPIRY -gt 30 ]; then
+    if openssl x509 -in "$FULLCHAIN" -noout -checkend "$SECONDS_30_DAYS" 2>/dev/null; then
+        DAYS_UNTIL_EXPIRY=$(( SECONDS_30_DAYS / 86400 ))
         echo "Wildcard certificate for *.${BASE_DOMAIN} exists and is valid for ${DAYS_UNTIL_EXPIRY} more days"
         mkdir -p "$HOST_CERT_DIR"
         cp -L "$FULLCHAIN" "${HOST_CERT_DIR}/fullchain.pem"
