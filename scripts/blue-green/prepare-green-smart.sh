@@ -510,8 +510,13 @@ fi
 RESOLVED_CONFIG=$(docker compose -f "$COMPOSE_FILE" -p "$PROJECT_NAME" config 2>/dev/null || echo "")
 
 if [ -n "$RESOLVED_CONFIG" ]; then
-    # Extract volume mount paths (host:container format)
+    # Extract volume mount paths (host:container format); skip tmpfs (path:noexec,nosuid,size=...)
     echo "$RESOLVED_CONFIG" | grep -E "^\s+-.*:" | grep -v "ports:" | while IFS= read -r volume_line; do
+        # Skip tmpfs entries (container_path:options with noexec/size=) - not bind mounts
+        rest_after_colon=$(echo "$volume_line" | cut -d: -f2-)
+        if echo "$rest_after_colon" | grep -qE 'noexec|size='; then
+            continue
+        fi
         # Extract host path (before the colon)
         host_path=$(echo "$volume_line" | sed -E 's/^\s+-[[:space:]]*"([^"]+):[^"]+".*/\1/' | sed -E "s/^\s+-[[:space:]]*([^:]+):[^:]+.*/\1/" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | cut -d: -f1)
         
