@@ -34,6 +34,14 @@ if [ ! -f "$CF_CREDENTIALS" ]; then
     echo "And mount secrets/ to /etc/letsencrypt/secrets in the certbot container."
     exit 1
 fi
+# Certbot requires credentials file not world/group readable (avoids "Unsafe permissions" warning)
+if perms=$(stat -c %a "$CF_CREDENTIALS" 2>/dev/null) && [ "$perms" != "600" ] && [ "$perms" != "400" ]; then
+    if chmod 600 "$CF_CREDENTIALS" 2>/dev/null; then
+        echo "Fixed credentials file permissions to 600"
+    else
+        echo "Warning: fix permissions on host so Certbot does not warn: chmod 600 secrets/cloudflare.ini"
+    fi
+fi
 
 # Check if wildcard cert already exists and is valid (> 30 days)
 # Use openssl -checkend (portable; avoids date -d which fails on Alpine/busybox)
