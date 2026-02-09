@@ -67,6 +67,7 @@ certbot certonly \
     --agree-tos \
     --no-eff-email \
     --non-interactive \
+    --expand \
     $STAGING_FLAG \
     -d "*.${BASE_DOMAIN}" \
     -d "${BASE_DOMAIN}" \
