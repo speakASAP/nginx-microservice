@@ -15,8 +15,11 @@ if [ "$BASE" = "statex.cz" ]; then
     leads.statex.cz docs.statex.cz status.statex.cz"
 elif [ "$BASE" = "sgipreal.com" ]; then
   SUBDOMAINS="database-server.sgipreal.com auth.sgipreal.com logging.sgipreal.com"
+elif [ "$BASE" = "alfares.cz" ]; then
+  SUBDOMAINS="ai.alfares.cz auth.alfares.cz leads.alfares.cz logging.alfares.cz marathon.alfares.cz \
+    messenger.alfares.cz notifications.alfares.cz payments.alfares.cz speakasap.alfares.cz"
 else
-  echo "Usage: symlink-subdomains-to-wildcard.sh [sgipreal.com|statex.cz]"
+  echo "Usage: symlink-subdomains-to-wildcard.sh [sgipreal.com|statex.cz|alfares.cz]"
   exit 1
 fi
 
