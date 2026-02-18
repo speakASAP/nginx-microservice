@@ -129,6 +129,32 @@ fi
 
 log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 0 completed: Infrastructure is ready"
 
+# Register application in auth-microservice (if auth-microservice is available)
+log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Registering application in auth-microservice"
+SERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/${SERVICE_NAME}"
+if [ -d "$SERVICE_DIR" ] && [ -f "${SERVICE_DIR}/scripts/register-application.sh" ]; then
+    if bash "${SERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" 2>/dev/null; then
+        log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Application registered in auth-microservice"
+    else
+        log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (will be handled by seed script)"
+    fi
+elif [ -d "$SERVICE_DIR" ] && [ -f "${SERVICE_DIR}/.env" ]; then
+    # Try to register using auth-microservice script if available
+    AUTH_MICROSERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/auth-microservice"
+    if [ -d "$AUTH_MICROSERVICE_DIR" ] && [ -f "${AUTH_MICROSERVICE_DIR}/scripts/register-application.sh" ]; then
+        cd "$SERVICE_DIR"
+        if bash "${AUTH_MICROSERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" 2>/dev/null; then
+            log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Application registered in auth-microservice"
+        else
+            log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (will be handled by seed script)"
+        fi
+    else
+        log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (register-application.sh not found)"
+    fi
+else
+    log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (service directory not found)"
+fi
+
 # Phase 1: Prepare green (smart version)
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Phase 1: Preparing green deployment (smart mode)"
 
