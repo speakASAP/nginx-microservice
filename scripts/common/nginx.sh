@@ -516,69 +516,78 @@ test_nginx_config() {
     
     cd "$NGINX_PROJECT_DIR"
     
-    # Wait for nginx container to be running (not restarting)
-    # We need to wait for it to be stable, not just "Up" once
-    local stable_count=0
-    local required_stable=3  # Container must be "Up" for 3 consecutive checks
-    
-    while [ $elapsed -lt $max_wait ]; do
-        local container_status=$(docker compose ps nginx --format "{{.Status}}" 2>/dev/null || echo "")
-        if echo "$container_status" | grep -qE "^Up"; then
-            # Container is running, increment stable count
-            stable_count=$((stable_count + 1))
-            if [ $stable_count -ge $required_stable ]; then
-                # Container has been stable for required checks
-                break
-            fi
-        elif echo "$container_status" | grep -qE "Restarting|Starting"; then
-            # Container is restarting or starting, reset stable count
-            stable_count=0
-        else
-            # Container might not exist or be stopped, reset stable count
-            stable_count=0
-        fi
-        sleep $wait_interval
-        elapsed=$((elapsed + wait_interval))
-    done
-    
-    # Additional check: ensure container is actually accessible
-    # Wait longer if container was restarting
+    # Fast path: Check if nginx is already running and accessible (common case during deployments)
     # Use docker exec directly instead of docker compose exec to avoid project name issues
-    local retries=0
-    local max_retries=10  # Increased from 5 to 10
-    while [ $retries -lt $max_retries ]; do
-        if docker exec nginx-microservice echo >/dev/null 2>&1; then
-            # Container is accessible, verify it stays accessible
-            sleep 1
-            if docker exec nginx-microservice echo >/dev/null 2>&1; then
-                break
-            fi
-        fi
-        sleep 1
-        retries=$((retries + 1))
-    done
-    
-    if [ $retries -eq $max_retries ]; then
-        # Try to start nginx container if it's not running
-        print_warning "Nginx container is not accessible, attempting to start it..."
-        if docker compose up -d nginx >/dev/null 2>&1; then
-            print_status "Nginx container started, waiting for it to be ready..."
-            sleep 3
-            # Try one more time
-            if docker exec nginx-microservice echo >/dev/null 2>&1; then
-                print_success "Nginx container is now accessible"
-                # Continue with test
+    if docker exec nginx-microservice echo >/dev/null 2>&1; then
+        # Container is accessible, proceed directly to config test (skip wait loops)
+        # This makes the function instant when nginx is already running
+        :  # Empty block - nginx is ready, skip wait loops
+    else
+        # Nginx is not accessible, wait for it to be ready
+        # Wait for nginx container to be running (not restarting)
+        # We need to wait for it to be stable, not just "Up" once
+        local stable_count=0
+        local required_stable=3  # Container must be "Up" for 3 consecutive checks
+        
+        while [ $elapsed -lt $max_wait ]; do
+            # Check container status using docker directly (more reliable than docker compose ps)
+            local container_status=$(docker inspect --format='{{.State.Status}}' nginx-microservice 2>/dev/null || echo "none")
+            if [ "$container_status" = "running" ]; then
+                # Container is running, increment stable count
+                stable_count=$((stable_count + 1))
+                if [ $stable_count -ge $required_stable ]; then
+                    # Container has been stable for required checks
+                    break
+                fi
+            elif [ "$container_status" = "restarting" ] || [ "$container_status" = "starting" ]; then
+                # Container is restarting or starting, reset stable count
+                stable_count=0
             else
-                print_error "Nginx container started but still not accessible"
-                print_error "Check nginx logs: docker logs nginx-microservice"
-                # Don't fail - nginx might start later, configs are already validated
+                # Container might not exist or be stopped, reset stable count
+                stable_count=0
+            fi
+            sleep $wait_interval
+            elapsed=$((elapsed + wait_interval))
+        done
+        
+        # Additional check: ensure container is actually accessible
+        # Wait longer if container was restarting
+        local retries=0
+        local max_retries=10  # Increased from 5 to 10
+        while [ $retries -lt $max_retries ]; do
+            if docker exec nginx-microservice echo >/dev/null 2>&1; then
+                # Container is accessible, verify it stays accessible
+                sleep 1
+                if docker exec nginx-microservice echo >/dev/null 2>&1; then
+                    break
+                fi
+            fi
+            sleep 1
+            retries=$((retries + 1))
+        done
+        
+        if [ $retries -eq $max_retries ]; then
+            # Try to start nginx container if it's not running
+            print_warning "Nginx container is not accessible, attempting to start it..."
+            if docker compose up -d nginx >/dev/null 2>&1; then
+                print_status "Nginx container started, waiting for it to be ready..."
+                sleep 3
+                # Try one more time
+                if docker exec nginx-microservice echo >/dev/null 2>&1; then
+                    print_success "Nginx container is now accessible"
+                    # Continue with test
+                else
+                    print_error "Nginx container started but still not accessible"
+                    print_error "Check nginx logs: docker logs nginx-microservice"
+                    # Don't fail - nginx might start later, configs are already validated
+                    return 0
+                fi
+            else
+                print_warning "Could not start nginx container (may not be critical if nginx starts later)"
+                print_warning "Configs are already validated, nginx will work when it starts"
+                # Don't fail - configs are validated, nginx can start later
                 return 0
             fi
-        else
-            print_warning "Could not start nginx container (may not be critical if nginx starts later)"
-            print_warning "Configs are already validated, nginx will work when it starts"
-            # Don't fail - configs are validated, nginx can start later
-            return 0
         fi
     fi
     
