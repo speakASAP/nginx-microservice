@@ -128,13 +128,14 @@ validate_config_syntax() {
     # Test config syntax using nginx -t
     # Note: We test with the actual nginx.conf which includes all configs
     # This is acceptable because nginx will handle unavailable upstreams gracefully
+    # Use docker exec directly instead of docker compose exec to avoid project name issues
     cd "$NGINX_PROJECT_DIR"
-    if docker compose -f "$nginx_compose_file" exec -T nginx nginx -t >/dev/null 2>&1; then
+    if docker exec nginx-microservice nginx -t >/dev/null 2>&1; then
         # Basic syntax check passed
         return 0
     else
         # Get error output
-        local error_output=$(docker compose -f "$nginx_compose_file" exec -T nginx nginx -t 2>&1 || true)
+        local error_output=$(docker exec nginx-microservice nginx -t 2>&1 || true)
         
         # Check for critical errors that would break nginx
         if echo "$error_output" | grep -qE "duplicate upstream|no servers are inside upstream|syntax error"; then
@@ -542,13 +543,14 @@ test_nginx_config() {
     
     # Additional check: ensure container is actually accessible
     # Wait longer if container was restarting
+    # Use docker exec directly instead of docker compose exec to avoid project name issues
     local retries=0
     local max_retries=10  # Increased from 5 to 10
     while [ $retries -lt $max_retries ]; do
-        if docker compose exec -T nginx echo >/dev/null 2>&1; then
+        if docker exec nginx-microservice echo >/dev/null 2>&1; then
             # Container is accessible, verify it stays accessible
             sleep 1
-            if docker compose exec -T nginx echo >/dev/null 2>&1; then
+            if docker exec nginx-microservice echo >/dev/null 2>&1; then
                 break
             fi
         fi
@@ -563,7 +565,7 @@ test_nginx_config() {
             print_status "Nginx container started, waiting for it to be ready..."
             sleep 3
             # Try one more time
-            if docker compose exec -T nginx echo >/dev/null 2>&1; then
+            if docker exec nginx-microservice echo >/dev/null 2>&1; then
                 print_success "Nginx container is now accessible"
                 # Continue with test
             else
@@ -583,11 +585,12 @@ test_nginx_config() {
     # Now test the configuration
     # Note: We test all configs, but if test fails, we don't prevent nginx from running
     # Invalid configs should have been rejected during generation
-    if docker compose exec -T nginx nginx -t >/dev/null 2>&1; then
+    # Use docker exec directly instead of docker compose exec to avoid project name issues
+    if docker exec nginx-microservice nginx -t >/dev/null 2>&1; then
         return 0
     else
         # Get error output for logging
-        local error_output=$(docker compose exec -T nginx nginx -t 2>&1 || true)
+        local error_output=$(docker exec nginx-microservice nginx -t 2>&1 || true)
         print_warning "Nginx configuration test failed (this may be expected if nginx is not fully started)"
         # Log error but don't print to console unless in verbose mode
         echo "$error_output" | grep -E "error|emerg|failed" | head -5 | sed 's/^/  /' || true
@@ -597,7 +600,7 @@ test_nginx_config() {
     fi
 }
 
-# Function to reload nginx
+# Function to reload nginx (simplified and more robust)
 reload_nginx() {
     local nginx_compose_file="${NGINX_PROJECT_DIR}/docker-compose.yml"
     
@@ -608,43 +611,54 @@ reload_nginx() {
     
     cd "$NGINX_PROJECT_DIR"
     
-    # Check if nginx container is running
+    # Check if nginx container exists and is running
     local nginx_running=false
     if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$"; then
-        local nginx_status=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | grep "^nginx-microservice" | awk '{print $2}' || echo "")
-        if [ -n "$nginx_status" ] && ! echo "$nginx_status" | grep -qE "Restarting"; then
+        # Container exists, check if it's actually running (not restarting)
+        local container_status=$(docker inspect --format='{{.State.Status}}' nginx-microservice 2>/dev/null || echo "none")
+        if [ "$container_status" = "running" ]; then
             nginx_running=true
         fi
     fi
     
+    # If nginx is not running, start it
     if [ "$nginx_running" = "false" ]; then
-        # Nginx is not running - start it instead of reloading
         print_status "Nginx container is not running, starting it..."
-        if docker compose up -d nginx >/dev/null 2>&1; then
-            print_success "Nginx container started"
-            # Wait a moment for nginx to be ready
-            sleep 2
-            return 0
-        else
+        if ! docker compose up -d nginx 2>&1; then
             print_error "Failed to start nginx container"
             return 1
         fi
+        
+        # Wait for nginx to be ready (max 10 seconds)
+        local wait_count=0
+        local max_wait=10
+        while [ $wait_count -lt $max_wait ]; do
+            if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^nginx-microservice$"; then
+                local container_status=$(docker inspect --format='{{.State.Status}}' nginx-microservice 2>/dev/null || echo "none")
+                if [ "$container_status" = "running" ]; then
+                    # Give nginx a moment to fully initialize
+                    sleep 1
+                    print_success "Nginx container started and ready"
+                    return 0
+                fi
+            fi
+            sleep 1
+            wait_count=$((wait_count + 1))
+        done
+        
+        print_error "Nginx container failed to start within ${max_wait} seconds"
+        return 1
     fi
     
-    # Nginx is running - test config first, then reload
+    # Nginx is running - reload it
     # Note: Config test may fail if upstreams are unavailable, but that's acceptable
     # Nginx will return 502s until containers are available
-    if ! test_nginx_config >/dev/null 2>&1; then
-        print_warning "Nginx config test failed or container not accessible, attempting reload anyway..."
-        # Continue with reload attempt - nginx may still accept the reload
-    fi
-    
-    # Reload nginx
-    if docker compose exec nginx nginx -s reload >/dev/null 2>&1; then
+    # Use docker exec directly instead of docker compose exec to avoid project name issues
+    if docker exec nginx-microservice nginx -s reload 2>&1; then
         return 0
     else
-        print_error "Failed to reload nginx"
-        docker compose exec nginx nginx -s reload
+        local reload_error=$(docker exec nginx-microservice nginx -s reload 2>&1)
+        print_error "Failed to reload nginx: $reload_error"
         return 1
     fi
 }
