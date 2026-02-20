@@ -308,6 +308,9 @@ Edit `.env` file:
 CERTBOT_EMAIL=admin@example.com          # Email for Let's Encrypt (default: admin@example.com)
 CERTBOT_STAGING=false                    # Use staging environment (for testing)
 
+# Wildcard Certificates (Optional)
+WILDCARD_CERT_DOMAINS=                   # Space-separated base domains with *.domain cert (e.g. statex.cz sgipreal.com)
+
 # Docker Network Configuration
 NETWORK_NAME=nginx-network               # Docker network name
 
@@ -323,6 +326,12 @@ MULTI_DOMAIN_SERVICE_NAME=statex        # Service name that handles multiple dom
 
 # Default Domain Suffix (Optional)
 DEFAULT_DOMAIN_SUFFIX=example.com        # Optional: Default domain suffix for auto-generated domains
+
+# Docker Images (Optional overrides)
+HEALTH_CHECK_IMAGE=                      # Default: alpine/curl:latest
+CERTBOT_IMAGE=                           # Default: certbot/dns-cloudflare:latest
+POSTGRES_IMAGE=                          # Optional: postgres image for scripts
+REDIS_IMAGE=                             # Optional: redis image for scripts
 ```
 
 **Important Configuration Notes**:

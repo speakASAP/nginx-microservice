@@ -24,7 +24,9 @@ fi
 
 # Note: log_message will be available from utils.sh when modules are sourced together
 
-# Function to check if a port is in use and kill the process/container using it
+# Function to check if a port is in use and stop only Docker containers using it.
+# Does NOT kill host processes (Firefox, Cursor, dev servers, etc.) - only restarting
+# containers are stopped so the port can be used.
 # Usage: kill_port_if_in_use <port> [service_name] [color] [exclude_container]
 # exclude_container: container name to exclude from being killed (e.g., active color container)
 kill_port_if_in_use() {
@@ -80,36 +82,11 @@ kill_port_if_in_use() {
         fi
     fi
     
-    # Check if a host process is using this port (using lsof, netstat, or ss)
-    local pid_using_port=""
-    
-    # Try lsof first (most reliable on macOS/Linux)
-    if command -v lsof >/dev/null 2>&1; then
-        pid_using_port=$(lsof -ti:${port} 2>/dev/null | head -1 || echo "")
-    # Try ss (Linux)
-    elif command -v ss >/dev/null 2>&1; then
-        pid_using_port=$(ss -tlnp 2>/dev/null | grep ":${port} " | grep -oP 'pid=\K[0-9]+' | head -1 || echo "")
-    # Try netstat (fallback)
-    elif command -v netstat >/dev/null 2>&1; then
-        pid_using_port=$(netstat -tlnp 2>/dev/null | grep ":${port} " | grep -oP '\d+/\w+' | cut -d'/' -f1 | head -1 || echo "")
-    fi
-    
-    if [ -n "$pid_using_port" ] && [ "$pid_using_port" != "null" ]; then
-        # Check if it's a docker process (don't kill docker itself)
-        local process_name=$(ps -p "$pid_using_port" -o comm= 2>/dev/null || echo "")
-        if [ -n "$process_name" ] && ! echo "$process_name" | grep -qE "docker|dockerd|containerd"; then
-            if [ -n "$service_name" ]; then
-                if type log_message >/dev/null 2>&1; then
-                    log_message "WARNING" "$service_name" "$color" "port-check" "Port ${port} is in use by process ${pid_using_port} (${process_name}), killing it"
-                fi
-            else
-                print_warning "Port ${port} is in use by process ${pid_using_port} (${process_name}), killing it"
-            fi
-            kill -9 "$pid_using_port" 2>/dev/null || true
-            sleep 1  # Give it a moment to release the port
-        fi
-    fi
-    
+    # Do NOT kill host processes (Firefox, Cursor, dev servers, etc.) that use this port.
+    # Only Docker containers are stopped above. If a host process is using the port,
+    # nginx (or the service) will fail to bind with "address already in use" - the user
+    # can then stop that process themselves if they intend to use the port for nginx.
+
     return 0
 }
 
