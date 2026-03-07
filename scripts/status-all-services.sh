@@ -1,7 +1,8 @@
 #!/bin/bash
-# Central Service Status Script (Optimized)
-# Shows status of all services and applications
-# Usage: status-all-services.sh
+# Central Service Status Script (Fast - docker ps only by default)
+# Shows status of all services and applications from docker ps (no health checks by default).
+# Usage: status-all-services.sh [--health]
+#   --health  Optional: run HTTP health checks (slower).
 
 set -e
 
@@ -9,6 +10,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NGINX_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REGISTRY_DIR="${NGINX_PROJECT_DIR}/service-registry"
 BLUE_GREEN_DIR="${SCRIPT_DIR}/blue-green"
+
+# Fast mode: no health checks (default). Use --health to enable.
+RUN_HEALTH_CHECKS=0
+for arg in "$@"; do
+    if [ "$arg" = "--health" ]; then
+        RUN_HEALTH_CHECKS=1
+        break
+    fi
+done
 
 # Colors for output
 RED='\033[0;31m'
@@ -66,6 +76,58 @@ INFRASTRUCTURE_SERVICES=(
     "database-server"
 )
 
+# Known ecosystem services (from shared/README.md) - show even if not in registry
+ECOSYSTEM_MICROSERVICES=(
+    "ai-microservice"
+    "auth-microservice"
+    "catalog-microservice"
+    "leads-microservice"
+    "logging-microservice"
+    "minio-microservice"
+    "notifications-microservice"
+    "orders-microservice"
+    "payments-microservice"
+    "suppliers-microservice"
+    "warehouse-microservice"
+)
+ECOSYSTEM_APPLICATIONS=(
+    "agentic-email-processing-system"
+    "allegro-service"
+    "aukro-service"
+    "bazos-service"
+    "beauty"
+    "crypto-ai-agent"
+    "flipflop-service"
+    "heureka-service"
+    "marathon"
+    "messenger"
+    "shop-assistant"
+    "sgiprealestate"
+    "speakasap"
+    "speakasap-portal"
+    "statex"
+)
+
+# Derive service name from container name (e.g. flipflop-service-blue -> flipflop-service)
+service_name_from_container() {
+    local name="$1"
+    echo "$name" | sed -E 's/-blue$|-green$//'
+}
+
+# Discover services from docker ps (container names) - fast
+discover_services_from_docker() {
+    local names="$1"
+    local seen=""
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+        local svc=$(service_name_from_container "$line")
+        if [ -n "$svc" ] && [[ " $seen " != *" $svc "* ]]; then
+            seen="$seen $svc"
+            echo "$svc"
+        fi
+    done <<< "$names"
+}
+
 # Dynamically discover services from service-registry directory
 discover_services() {
     local registry_dir="$1"
@@ -88,33 +150,34 @@ discover_services() {
     printf '%s\n' "${services[@]}"
 }
 
-# Discover all registered services
-ALL_DISCOVERED_SERVICES=($(discover_services "$REGISTRY_DIR"))
+# Merge: registry + ecosystem only (one row per service/app; docker ps used only for status)
+merge_all_services() {
+    local registry_services=($(discover_services "$REGISTRY_DIR"))
+    local combined=("${registry_services[@]}" "${ECOSYSTEM_MICROSERVICES[@]}" "${ECOSYSTEM_APPLICATIONS[@]}")
+    printf '%s\n' "${combined[@]}" | sort -u
+}
 
-# Categorize services
-# Microservices: services ending with "-microservice"
+# Merge: registry + ecosystem + services from docker ps (no duplicates, sorted)
+# Call with docker container names (e.g. DOCKER_PS_NAMES_CACHE) after initialize_caches
+merge_all_services() {
+    local docker_names="$1"
+    local registry_services=($(discover_services "$REGISTRY_DIR"))
+    local from_docker=($(discover_services_from_docker "$docker_names"))
+    local combined=("${registry_services[@]}" "${ECOSYSTEM_MICROSERVICES[@]}" "${ECOSYSTEM_APPLICATIONS[@]}" "${from_docker[@]}")
+    printf '%s\n' "${combined[@]}" | sort -u
+}
+
+# Categorize services (filled after merge_all_services in main)
 MICROSERVICES=()
-# Applications: all other services (not infrastructure, not microservices)
 APPLICATIONS=()
 
-for service in "${ALL_DISCOVERED_SERVICES[@]}"; do
-    if [[ "$service" == *"-microservice" ]]; then
-        MICROSERVICES+=("$service")
-    else
-        # Skip infrastructure services
-        if [[ "$service" != "nginx-microservice" ]] && [[ "$service" != "database-server" ]]; then
-            APPLICATIONS+=("$service")
-        fi
-    fi
-done
-
-# Initialize caches - call once at start
+# Initialize caches - call once at start (containers sorted by name)
 initialize_caches() {
     print_detail "Initializing caches..."
-    # Cache docker ps output (all containers)
-    DOCKER_PS_CACHE=$(docker ps --format "{{.Names}}\t{{.Status}}\t{{.Image}}" 2>/dev/null || echo "")
-    DOCKER_PS_NAMES_CACHE=$(echo "$DOCKER_PS_CACHE" | awk '{print $1}' || echo "")
-    DOCKER_PS_STATUS_CACHE=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null || echo "")
+    # Cache docker ps output, sorted by container name
+    DOCKER_PS_CACHE=$(docker ps --format "{{.Names}}\t{{.Status}}\t{{.Image}}" 2>/dev/null | sort -t$'\t' -k1 || echo "")
+    DOCKER_PS_NAMES_CACHE=$(echo "$DOCKER_PS_CACHE" | awk -F'\t' '{print $1}' || echo "")
+    DOCKER_PS_STATUS_CACHE=$(docker ps --format "{{.Names}}\t{{.Status}}" 2>/dev/null | sort -t$'\t' -k1 || echo "")
 }
 
 # Optimized: Check if container is running using cache
@@ -150,26 +213,30 @@ load_registry_cache() {
     echo "${REGISTRY_CACHE[$service_name]}"
 }
 
-# Optimized: Get container status using cached data
+# Optimized: Get container status using cached data (registry + docker ps)
 get_container_status() {
     local service_name="$1"
     
-    # Check cache first
     if [ -n "${SERVICE_STATUS_CACHE[$service_name]}" ]; then
         echo "${SERVICE_STATUS_CACHE[$service_name]}"
         return
     fi
     
-    local registry=$(load_registry_cache "$service_name")
+    # Fast path: any container matching service name (from docker ps)?
+    if echo "$DOCKER_PS_NAMES_CACHE" | grep -qE "^${service_name}(-blue|-green)?$"; then
+        SERVICE_STATUS_CACHE[$service_name]="running"
+        echo "running"
+        return
+    fi
     
+    local registry=$(load_registry_cache "$service_name")
     if [ -z "$registry" ]; then
-        SERVICE_STATUS_CACHE[$service_name]="not-registered"
-        echo "not-registered"
+        SERVICE_STATUS_CACHE[$service_name]="stopped"
+        echo "stopped"
         return
     fi
     
     local service_keys=$(echo "$registry" | jq -r '.services | keys[]' 2>/dev/null || echo "")
-    
     if [ -z "$service_keys" ]; then
         SERVICE_STATUS_CACHE[$service_name]="no-services"
         echo "no-services"
@@ -178,12 +245,10 @@ get_container_status() {
     
     local running_count=0
     local total_count=0
-    
     while IFS= read -r service_key; do
         local container_base=$(echo "$registry" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
         if [ -n "$container_base" ] && [ "$container_base" != "null" ]; then
             total_count=$((total_count + 1))
-            # Check for blue, green, or base container name using cache
             if echo "$DOCKER_PS_NAMES_CACHE" | grep -qE "^${container_base}(-blue|-green)?$"; then
                 running_count=$((running_count + 1))
             fi
@@ -200,7 +265,6 @@ get_container_status() {
     else
         result="stopped"
     fi
-    
     SERVICE_STATUS_CACHE[$service_name]="$result"
     echo "$result"
 }
@@ -285,10 +349,28 @@ format_infrastructure_status() {
 print_status "=========================================="
 print_status "Service Status Report"
 print_status "=========================================="
+if [ "$RUN_HEALTH_CHECKS" -eq 0 ]; then
+    print_detail "Fast mode: status from docker ps only. Use --health for HTTP health checks."
+fi
 print_status ""
 
 # Initialize caches once at start
 initialize_caches
+
+# Build full service list from registry + ecosystem, then categorize and sort by name
+ALL_DISCOVERED_SERVICES=($(merge_all_services))
+for service in "${ALL_DISCOVERED_SERVICES[@]}"; do
+    if [[ "$service" == *"-microservice" ]]; then
+        MICROSERVICES+=("$service")
+    else
+        if [[ "$service" != "nginx-microservice" ]] && [[ "$service" != "database-server" ]]; then
+            APPLICATIONS+=("$service")
+        fi
+    fi
+done
+# Sort microservices and applications by name
+MICROSERVICES=($(printf '%s\n' "${MICROSERVICES[@]}" | sort))
+APPLICATIONS=($(printf '%s\n' "${APPLICATIONS[@]}" | sort))
 
 # Infrastructure Services
 print_status "=========================================="
@@ -349,61 +431,114 @@ display_service_status() {
     esac
 }
 
-# Microservices
-print_status "=========================================="
-print_status "Microservices"
-print_status "=========================================="
-
-# Store results for dashboard reuse
+# Store results for dashboard reuse and grouping
 declare -A MICROSERVICE_RESULTS
+declare -A APPLICATION_RESULTS
 
 # Temporarily disable exit on error for the loop
 set +e
 for service in "${MICROSERVICES[@]}"; do
     container_status=$(get_container_status "$service" || echo "not-registered")
     domain=$(get_service_domain "$service" || echo "")
-    
-    # Check health and store result (may return 1 for unhealthy, which is OK)
-    check_service_health "$service" || true
-    health_result=$?
-    
-    # Store for dashboard
+    if [ "$RUN_HEALTH_CHECKS" -eq 1 ]; then
+        check_service_health "$service" || true
+        health_result=$?
+    else
+        [ "$container_status" = "running" ] && health_result=0 || health_result=1
+    fi
     MICROSERVICE_RESULTS["${service}_status"]="$container_status"
     MICROSERVICE_RESULTS["${service}_domain"]="$domain"
     MICROSERVICE_RESULTS["${service}_health"]="$health_result"
-    
-    display_service_status "$service" "$container_status" "$domain" "$health_result"
 done
-set -e
-
-print_status ""
-
-# Applications
-print_status "=========================================="
-print_status "Applications"
-print_status "=========================================="
-
-# Store results for dashboard reuse
-declare -A APPLICATION_RESULTS
-
-# Temporarily disable exit on error for the loop
-set +e
 for service in "${APPLICATIONS[@]}"; do
     container_status=$(get_container_status "$service" || echo "not-registered")
     domain=$(get_service_domain "$service" || echo "")
-    
-    # Check health and store result (may return 1 for unhealthy, which is OK)
-    check_service_health "$service" || true
-    health_result=$?
-    
-    # Store for dashboard
+    if [ "$RUN_HEALTH_CHECKS" -eq 1 ]; then
+        check_service_health "$service" || true
+        health_result=$?
+    else
+        [ "$container_status" = "running" ] && health_result=0 || health_result=1
+    fi
     APPLICATION_RESULTS["${service}_status"]="$container_status"
     APPLICATION_RESULTS["${service}_domain"]="$domain"
     APPLICATION_RESULTS["${service}_health"]="$health_result"
-    
-    display_service_status "$service" "$container_status" "$domain" "$health_result"
 done
 set -e
+
+# Group services by status (running+healthy, unhealthy/partial, stopped)
+RUNNING_HEALTHY=()
+UNHEALTHY_PARTIAL=()
+STOPPED_OTHER=()
+for name in nginx-microservice nginx-certbot db-server-postgres db-server-redis "${MICROSERVICES[@]}" "${APPLICATIONS[@]}"; do
+    if [ "$name" = "nginx-microservice" ]; then
+        [ -n "$NGINX_STATUS" ] && RUNNING_HEALTHY+=("$name") || STOPPED_OTHER+=("$name")
+    elif [ "$name" = "nginx-certbot" ]; then
+        [ -n "$NGINX_CERTBOT_STATUS" ] && RUNNING_HEALTHY+=("$name") || STOPPED_OTHER+=("$name")
+    elif [ "$name" = "db-server-postgres" ] || [ "$name" = "db-server-redis" ]; then
+        s=$(get_container_status_from_cache "$name")
+        [ -n "$s" ] && RUNNING_HEALTHY+=("$name") || STOPPED_OTHER+=("$name")
+    else
+        container_status="${MICROSERVICE_RESULTS["${name}_status"]}${APPLICATION_RESULTS["${name}_status"]}"
+        health_result="${MICROSERVICE_RESULTS["${name}_health"]}${APPLICATION_RESULTS["${name}_health"]}"
+        if [ "$container_status" = "running" ] && [ "$health_result" = "0" ]; then
+            RUNNING_HEALTHY+=("$name")
+        elif [ "$container_status" = "running" ] || [ "$container_status" = "partial" ]; then
+            UNHEALTHY_PARTIAL+=("$name")
+        else
+            STOPPED_OTHER+=("$name")
+        fi
+    fi
+done
+RUNNING_HEALTHY=($(printf '%s\n' "${RUNNING_HEALTHY[@]}" | sort -u))
+UNHEALTHY_PARTIAL=($(printf '%s\n' "${UNHEALTHY_PARTIAL[@]}" | sort -u))
+STOPPED_OTHER=($(printf '%s\n' "${STOPPED_OTHER[@]}" | sort -u))
+
+# Print services grouped by status
+print_status "=========================================="
+print_status "Services by status"
+print_status "=========================================="
+
+print_status ""
+print_status "--- Running and healthy ---"
+for service in "${RUNNING_HEALTHY[@]}"; do
+    container_status="${MICROSERVICE_RESULTS["${service}_status"]}${APPLICATION_RESULTS["${service}_status"]}"
+    domain="${MICROSERVICE_RESULTS["${service}_domain"]}${APPLICATION_RESULTS["${service}_domain"]}"
+    if [ "$service" = "nginx-microservice" ] || [ "$service" = "nginx-certbot" ] || [ "$service" = "db-server-postgres" ] || [ "$service" = "db-server-redis" ]; then
+        s=$(get_container_status_from_cache "$service")
+        echo -e "  ${GREEN_CHECK} $service: Up"
+    else
+        echo -e "  ${GREEN_CHECK} $service: Running and healthy"
+        [ -n "$domain" ] && [ "$domain" != "null" ] && echo -e "    Domain: $domain"
+    fi
+done
+
+if [ ${#UNHEALTHY_PARTIAL[@]} -gt 0 ]; then
+    print_status ""
+    print_status "--- Unhealthy / Partial ---"
+    for service in "${UNHEALTHY_PARTIAL[@]}"; do
+        container_status="${MICROSERVICE_RESULTS["${service}_status"]}${APPLICATION_RESULTS["${service}_status"]}"
+        domain="${MICROSERVICE_RESULTS["${service}_domain"]}${APPLICATION_RESULTS["${service}_domain"]}"
+        if [ "$container_status" = "partial" ]; then
+            echo -e "  ${RED_X} $service: Partially running"
+        else
+            echo -e "  ${RED_X} $service: Running but health check failed"
+        fi
+        [ -n "$domain" ] && [ "$domain" != "null" ] && echo -e "    Domain: $domain"
+    done
+fi
+
+print_status ""
+print_status "--- Stopped / Not running ---"
+for service in "${STOPPED_OTHER[@]}"; do
+    container_status="${MICROSERVICE_RESULTS["${service}_status"]}${APPLICATION_RESULTS["${service}_status"]}"
+    domain="${MICROSERVICE_RESULTS["${service}_domain"]}${APPLICATION_RESULTS["${service}_domain"]}"
+    if [ "$service" = "nginx-microservice" ] || [ "$service" = "nginx-certbot" ] || [ "$service" = "db-server-postgres" ] || [ "$service" = "db-server-redis" ]; then
+        echo -e "  ${RED_X} $service: Not running"
+    else
+        echo -e "  ${RED_X} $service: Stopped"
+        [ -n "$domain" ] && [ "$domain" != "null" ] && echo -e "    Domain: $domain"
+    fi
+done
 
 print_status ""
 print_status "=========================================="
@@ -431,7 +566,9 @@ print_status ""
 print_detail "Checking for unhealthy containers..."
 if echo "$DOCKER_PS_STATUS_CACHE" | grep -qE "Restarting|Unhealthy|Exited"; then
     print_warning "Some containers are ${RED_X} not healthy:"
-    echo "$DOCKER_PS_STATUS_CACHE" | grep -E "Restarting|Unhealthy|Exited" | sed "s/^/  ${RED_X} /" || true
+    echo "$DOCKER_PS_STATUS_CACHE" | grep -E "Restarting|Unhealthy|Exited" | while IFS=$'\t' read -r name status; do
+        echo -e "  ${RED_X} $name\t$status"
+    done
 else
     print_success "All running containers appear ${GREEN_CHECK} healthy"
 fi
@@ -442,7 +579,7 @@ print_detail "Stopped containers:"
 STOPPED_COUNT=$(docker ps -a --filter "status=exited" --format "{{.Names}}" 2>/dev/null | wc -l)
 if [ "$STOPPED_COUNT" -gt 0 ]; then
     print_detail "$STOPPED_COUNT container(s) stopped:"
-    docker ps -a --filter "status=exited" --format "  - {{.Names}}: {{.Status}}" 2>&1 | head -20
+    docker ps -a --filter "status=exited" --format "{{.Names}}: {{.Status}}" 2>/dev/null | sort | head -20 | sed 's/^/  - /'
 else
     print_success "No stopped containers"
 fi
@@ -474,126 +611,62 @@ format_dashboard_status() {
     fi
 }
 
-# Final Dashboard
+# Final Dashboard - grouped by status (Healthy/Running, then Unhealthy/Partial, then Stopped), names sorted within each group
 print_status ""
 print_status "=========================================="
-print_status "Service Dashboard"
+print_status "Service Dashboard (by status)"
 print_status "=========================================="
 print_status ""
 
-# Print table header
+# Helper: print dashboard rows for a list of names
+print_dashboard_rows() {
+    for name in "$@"; do
+        domain="N/A"
+        case "$name" in
+            nginx-microservice)
+                format_dashboard_status "$NGINX_STATUS" "icon" "status_text"
+                ;;
+            nginx-certbot)
+                [ -n "$NGINX_CERTBOT_STATUS" ] && status_text="RUNNING" && icon="${GREEN_CHECK}" || { status_text="STOPPED"; icon="${RED_X}"; }
+                ;;
+            db-server-postgres)
+                format_dashboard_status "$POSTGRES_STATUS" "icon" "status_text"
+                ;;
+            db-server-redis)
+                format_dashboard_status "$REDIS_STATUS" "icon" "status_text"
+                ;;
+            *)
+                if [ -n "${MICROSERVICE_RESULTS["${name}_status"]}" ]; then
+                    container_status="${MICROSERVICE_RESULTS["${name}_status"]}"
+                    domain="${MICROSERVICE_RESULTS["${name}_domain"]}"
+                    health_result="${MICROSERVICE_RESULTS["${name}_health"]}"
+                else
+                    container_status="${APPLICATION_RESULTS["${name}_status"]}"
+                    domain="${APPLICATION_RESULTS["${name}_domain"]}"
+                    health_result="${APPLICATION_RESULTS["${name}_health"]}"
+                fi
+                case "$container_status" in
+                    "running")
+                        [ "$health_result" = "0" ] && { icon="${GREEN_CHECK}"; status_text="HEALTHY"; } || { icon="${RED_X}"; status_text="UNHEALTHY"; }
+                        ;;
+                    "partial") icon="${RED_X}"; status_text="PARTIAL" ;;
+                    "stopped") icon="${RED_X}"; status_text="STOPPED" ;;
+                    "not-registered") icon="${RED_X}"; status_text="NOT REGISTERED" ;;
+                    "no-services") icon="${RED_X}"; status_text="NO SERVICES" ;;
+                    *) icon="${RED_X}"; status_text="UNKNOWN" ;;
+                esac
+                [ -z "$domain" ] || [ "$domain" = "null" ] && domain="N/A"
+                ;;
+        esac
+        echo -e "$(printf '%-35s' "$name")$icon $(printf '%-12s' "$status_text")$(printf '%-40s' "$domain")"
+    done
+}
+
 echo -e "SERVICE                             STATUS          DOMAIN"
 echo -e "----------------------------------- --------------- ----------------------------------------"
-
-# Infrastructure Services (using cached statuses)
-for service in "${INFRASTRUCTURE_SERVICES[@]}"; do
-    if [ "$service" = "nginx-microservice" ]; then
-        format_dashboard_status "$NGINX_STATUS" "icon" "status_text"
-        echo -e "$(printf '%-35s' 'nginx-microservice')$icon $(printf '%-12s' "$status_text")$(printf '%-40s' 'N/A')"
-        
-        if [ -n "$NGINX_CERTBOT_STATUS" ]; then
-            echo -e "$(printf '%-35s' 'nginx-certbot')${GREEN_CHECK} $(printf '%-12s' 'RUNNING')$(printf '%-40s' 'N/A')"
-        else
-            echo -e "$(printf '%-35s' 'nginx-certbot')${RED_X} $(printf '%-12s' 'STOPPED')$(printf '%-40s' 'N/A')"
-        fi
-    elif [ "$service" = "database-server" ]; then
-        format_dashboard_status "$POSTGRES_STATUS" "icon" "status_text"
-        echo -e "$(printf '%-35s' 'db-server-postgres')$icon $(printf '%-12s' "$status_text")$(printf '%-40s' 'N/A')"
-        
-        format_dashboard_status "$REDIS_STATUS" "icon" "status_text"
-        echo -e "$(printf '%-35s' 'db-server-redis')$icon $(printf '%-12s' "$status_text")$(printf '%-40s' 'N/A')"
-    fi
-done
-
-# Microservices (using stored results)
-for service in "${MICROSERVICES[@]}"; do
-    container_status="${MICROSERVICE_RESULTS["${service}_status"]}"
-    domain="${MICROSERVICE_RESULTS["${service}_domain"]}"
-    health_result="${MICROSERVICE_RESULTS["${service}_health"]}"
-    
-    case "$container_status" in
-        "running")
-            if [ "$health_result" = "0" ]; then
-                icon="${GREEN_CHECK}"
-                status_text="HEALTHY"
-            else
-                icon="${RED_X}"
-                status_text="UNHEALTHY"
-            fi
-            ;;
-        "partial")
-            icon="${RED_X}"
-            status_text="PARTIAL"
-            ;;
-        "stopped")
-            icon="${RED_X}"
-            status_text="STOPPED"
-            ;;
-        "not-registered")
-            icon="${RED_X}"
-            status_text="NOT REGISTERED"
-            ;;
-        "no-services")
-            icon="${RED_X}"
-            status_text="NO SERVICES"
-            ;;
-        *)
-            icon="${RED_X}"
-            status_text="UNKNOWN"
-            ;;
-    esac
-    
-    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
-        domain="N/A"
-    fi
-    
-    echo -e "$(printf '%-35s' "$service")$icon $(printf '%-12s' "$status_text")$(printf '%-40s' "$domain")"
-done
-
-# Applications (using stored results)
-for service in "${APPLICATIONS[@]}"; do
-    container_status="${APPLICATION_RESULTS["${service}_status"]}"
-    domain="${APPLICATION_RESULTS["${service}_domain"]}"
-    health_result="${APPLICATION_RESULTS["${service}_health"]}"
-    
-    case "$container_status" in
-        "running")
-            if [ "$health_result" = "0" ]; then
-                icon="${GREEN_CHECK}"
-                status_text="HEALTHY"
-            else
-                icon="${RED_X}"
-                status_text="UNHEALTHY"
-            fi
-            ;;
-        "partial")
-            icon="${RED_X}"
-            status_text="PARTIAL"
-            ;;
-        "stopped")
-            icon="${RED_X}"
-            status_text="STOPPED"
-            ;;
-        "not-registered")
-            icon="${RED_X}"
-            status_text="NOT REGISTERED"
-            ;;
-        "no-services")
-            icon="${RED_X}"
-            status_text="NO SERVICES"
-            ;;
-        *)
-            icon="${RED_X}"
-            status_text="UNKNOWN"
-            ;;
-    esac
-    
-    if [ -z "$domain" ] || [ "$domain" = "null" ]; then
-        domain="N/A"
-    fi
-    
-    echo -e "$(printf '%-35s' "$service")$icon $(printf '%-12s' "$status_text")$(printf '%-40s' "$domain")"
-done
+[ ${#RUNNING_HEALTHY[@]} -gt 0 ] && echo -e "${CYAN}--- Healthy / Running ---${NC}" && print_dashboard_rows "${RUNNING_HEALTHY[@]}"
+[ ${#UNHEALTHY_PARTIAL[@]} -gt 0 ] && echo "" && echo -e "${CYAN}--- Unhealthy / Partial ---${NC}" && print_dashboard_rows "${UNHEALTHY_PARTIAL[@]}"
+[ ${#STOPPED_OTHER[@]} -gt 0 ] && echo "" && echo -e "${CYAN}--- Stopped ---${NC}" && print_dashboard_rows "${STOPPED_OTHER[@]}"
 
 print_status ""
 
