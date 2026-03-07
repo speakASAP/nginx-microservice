@@ -65,7 +65,11 @@ if [ -f "${COMMON_DIR}/network.sh" ]; then
     source "${COMMON_DIR}/network.sh"
 fi
 
+# Re-set LOG_DIR so it is not overwritten by config.sh's load_env_file (nginx .env may set LOG_DIR)
+LOG_DIR="${NGINX_PROJECT_DIR}/logs/blue-green"
+
 # Function to log message (blue-green specific logging)
+# Use BLUE_GREEN_LOG_DIR so logging is not broken by .env overwriting LOG_DIR
 log_message() {
     local level="$1"
     local service="$2"
@@ -73,8 +77,10 @@ log_message() {
     local action="$4"
     local message="$5"
     local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    echo "[$timestamp] [$level] [$service] [$color] [$action] $message" >> "${LOG_DIR}/deploy.log"
+    local _log_dir="${LOG_DIR:-${NGINX_PROJECT_DIR}/logs/blue-green}"
+    local _log_file="${_log_dir}/deploy.log"
+    mkdir -p "$_log_dir" 2>/dev/null || true
+    echo "[$timestamp] [$level] [$service] [$color] [$action] $message" >> "$_log_file"
     
     case "$level" in
         "ERROR")

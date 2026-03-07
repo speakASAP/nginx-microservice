@@ -43,7 +43,7 @@ This service is **production-ready** and should **NOT** be modified directly.
 - The deployment script auto-detects service configuration from docker-compose files and environment variables
 - Nginx configurations are automatically generated from service registry files
 
-For complete documentation, see [Service Registry Documentation](../docs/SERVICE_REGISTRY.md).
+For complete documentation, see [Service Registry Documentation](docs/SERVICE_REGISTRY.md). Deploy scripts in services that use this nginx-microservice should follow the [Deploy and nginx standard](../shared/docs/DEPLOY_STANDARD.md) (shared repository).
 
 ## Architecture
 
