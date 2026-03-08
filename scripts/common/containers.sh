@@ -45,6 +45,10 @@ kill_port_if_in_use() {
         awk '{print $1}' | head -1 || echo "")
     
     if [ -n "$container_using_port" ]; then
+        # Port 80/443 in use by nginx-microservice is expected; skip check and do not log
+        if [ "$container_using_port" = "nginx-microservice" ] && { [ "$port" = "80" ] || [ "$port" = "443" ]; }; then
+            return 0
+        fi
         # Skip if this is the excluded container (e.g., active color serving traffic)
         if [ -n "$exclude_container" ] && [ "$container_using_port" = "$exclude_container" ]; then
             if [ -n "$service_name" ]; then
