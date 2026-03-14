@@ -348,7 +348,11 @@ generate_upstream_blocks() {
         # Use unique upstream name per color to avoid conflicts when both blue and green configs are loaded
         # Upstream name format: container_base-color (e.g., logging-microservice-blue)
         local upstream_name="${container_base}-${active_color}"
-        
+        # Deduplicate: multiple registry services can share the same container_base (e.g. backend + app); emit one upstream per name
+        if echo "$upstream_blocks" | grep -q "upstream ${upstream_name} "; then
+            continue
+        fi
+
         # Use zone for shared memory when using resolve directive (required for runtime DNS resolution)
         upstream_blocks="${upstream_blocks}upstream ${upstream_name} {
     zone ${upstream_name}_zone 64k;
