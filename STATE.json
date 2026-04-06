@@ -1,0 +1,1 @@
+{"v":1,"project":"nginx-microservice","stage":"production","health":"ok","cycle":0,"last_cycle_at":"2026-04-05T00:00:00Z","tasks_active":0,"tasks_failed_last_cycle":0,"open_task_ids":[],"last_milestone":"documentation-standard-applied","next_focus":"review and update by owner","blockers":[],"budget_units_used":0,"metrics":{"custom":{}}}
