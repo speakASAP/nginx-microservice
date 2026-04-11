@@ -550,9 +550,14 @@ Each domain has two certificate files in `./certificates/<domain>/`:
    ```bash
    docker compose run --rm certbot /scripts/symlink-subdomains-to-wildcard.sh statex.cz
    # or: .../symlink-subdomains-to-wildcard.sh sgipreal.com
+   # For alfares (one *.alfares.cz + alfares.cz wildcard; then point all subdomains at that material):
+   docker compose run --rm certbot /scripts/request-cert-wildcard.sh alfares.cz
+   docker compose run --rm certbot /scripts/symlink-subdomains-to-wildcard.sh alfares.cz
    ```
 
    Then reload nginx. New deployments will create symlinks automatically via `ensure_ssl_certificate`.
+
+   **`alfares.cz` checklist:** The hostnames processed by `symlink-subdomains-to-wildcard.sh alfares.cz` are listed **in the script** (`certbot/scripts/symlink-subdomains-to-wildcard.sh`). Whenever you add a **new** `*.alfares.cz` nginx vhost, **append that hostname to `SUBDOMAINS`** in the script and re-run it after the wildcard cert exists; otherwise nginx may still read an old real directory or a wrong symlink and clients will see hostname/cert mismatches (e.g. S3 clients to `minio.alfares.cz`).
 7. **Deployments**: For any service domain (e.g. `allegro.statex.cz`, `database-server.sgipreal.com`), `ensure_ssl_certificate` will create a symlink to the base domain cert. No per-subdomain cert requests.
 
 **Renewal**: `renew-cert.sh` uses `certbot renew`, which renews both webroot and DNS-01 certs. Ensure `secrets/cloudflare.ini` is mounted (default docker-compose mounts `./secrets`).
