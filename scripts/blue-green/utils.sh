@@ -907,8 +907,9 @@ auto_create_service_registry() {
     return 0
 }
 
-# Function to ensure SSL certificate exists (with temporary self-signed fallback)
-# This prevents nginx from failing when configs are generated before certificates are requested
+# Function to ensure SSL certificate exists (optional temporary self-signed fallback)
+# Prefer Let's Encrypt: README "Wildcard certificates" / request-cert.sh / request-cert-wildcard.sh.
+# Set SSL_SELF_SIGNED_FALLBACK=true only for legacy dev flows that must boot nginx before certbot.
 ensure_ssl_certificate() {
     local domain="$1"
     local service_name="${2:-}"
@@ -916,6 +917,14 @@ ensure_ssl_certificate() {
     if [ -z "$domain" ] || [ "$domain" = "null" ]; then
         return 0  # No domain, no certificate needed
     fi
+
+    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
+        set -a
+        # shellcheck source=/dev/null
+        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
+        set +a
+    fi
+    local self_signed_fallback="${SSL_SELF_SIGNED_FALLBACK:-false}"
 
     local cert_dir="${NGINX_PROJECT_DIR}/certificates/${domain}"
     local fullchain="${cert_dir}/fullchain.pem"
@@ -930,11 +939,6 @@ ensure_ssl_certificate() {
     fi
 
     # Wildcard cert: if domain is covered by WILDCARD_CERT_DOMAINS and base cert exists, use symlink
-    if [ -f "${NGINX_PROJECT_DIR}/.env" ]; then
-        set -a
-        source "${NGINX_PROJECT_DIR}/.env" 2>/dev/null || true
-        set +a
-    fi
     if [ -n "${WILDCARD_CERT_DOMAINS:-}" ]; then
         for base in $WILDCARD_CERT_DOMAINS; do
             if [ "$domain" = "$base" ] || [ "${domain%.$base}" != "$domain" ]; then
@@ -962,16 +966,22 @@ ensure_ssl_certificate() {
         done
     fi
 
-    # Certificate doesn't exist - create temporary self-signed certificate
-    # This allows nginx to start so we can request the real certificate
+    # No cert and no wildcard symlink — issue LE via certbot (see README); optional dev-only self-signed
+    if [ "$self_signed_fallback" != "true" ] && [ "$self_signed_fallback" != "1" ] && [ "$self_signed_fallback" != "yes" ]; then
+        if type log_message >/dev/null 2>&1; then
+            log_message "ERROR" "$service_name" "cert" "check" "No certificate material for domain: $domain (SSL_SELF_SIGNED_FALLBACK is not enabled)"
+            log_message "INFO" "$service_name" "cert" "check" "From ${NGINX_PROJECT_DIR}: docker compose run --rm certbot /scripts/request-cert.sh ${domain}"
+            log_message "INFO" "$service_name" "cert" "check" "Wildcard *.statex.cz: docker compose run --rm certbot /scripts/request-cert-wildcard.sh statex.cz; add hostname to certbot/scripts/symlink-subdomains-to-wildcard.sh; run that script; set WILDCARD_CERT_DOMAINS=... statex.cz in .env"
+        fi
+        return 1
+    fi
+
     if type log_message >/dev/null 2>&1; then
         log_message "WARNING" "$service_name" "cert" "check" "Certificate not found for domain: $domain"
-        log_message "INFO" "$service_name" "cert" "check" "Creating temporary self-signed certificate to allow nginx to start"
+        log_message "WARNING" "$service_name" "cert" "check" "SSL_SELF_SIGNED_FALLBACK=true: creating temporary self-signed certificate (dev only)"
     fi
-    
-    # Create certificate directory (may need sudo if owned by root)
+
     if ! mkdir -p "$cert_dir" 2>/dev/null; then
-        # Try with sudo if regular mkdir fails
         if command -v sudo >/dev/null 2>&1; then
             sudo mkdir -p "$cert_dir" 2>/dev/null || {
                 if type log_message >/dev/null 2>&1; then
@@ -986,13 +996,11 @@ ensure_ssl_certificate() {
             return 1
         fi
     fi
-    
-    # Create temporary self-signed certificate (valid for 1 day)
+
     if ! openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
         -keyout "$privkey" \
         -out "$fullchain" \
         -subj "/CN=${domain}" 2>/dev/null; then
-        # Try with sudo if regular openssl fails
         if command -v sudo >/dev/null 2>&1; then
             sudo openssl req -x509 -nodes -days 1 -newkey rsa:2048 \
                 -keyout "$privkey" \
@@ -1003,10 +1011,8 @@ ensure_ssl_certificate() {
                 fi
                 return 1
             }
-            # Fix ownership and permissions after sudo
             sudo chmod 600 "$privkey" 2>/dev/null || true
             sudo chmod 644 "$fullchain" 2>/dev/null || true
-            # Try to change ownership to current user if possible
             if [ -n "${USER:-}" ]; then
                 sudo chown -R "${USER}:${USER}" "$cert_dir" 2>/dev/null || true
             fi
@@ -1017,16 +1023,14 @@ ensure_ssl_certificate() {
             return 1
         fi
     else
-        # Set proper permissions
         chmod 600 "$privkey" 2>/dev/null || true
         chmod 644 "$fullchain" 2>/dev/null || true
     fi
-    
+
     if type log_message >/dev/null 2>&1; then
         log_message "SUCCESS" "$service_name" "cert" "check" "Temporary self-signed certificate created for: $domain"
-        log_message "INFO" "$service_name" "cert" "check" "Real certificate will be requested from Let's Encrypt after nginx starts"
     fi
-    
+
     return 0
 }
 

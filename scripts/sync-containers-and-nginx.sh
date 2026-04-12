@@ -392,6 +392,22 @@ sync_service_symlink() {
     else
         print_success "Symlink for $service_name is already correct ($domain -> $target_color)"
     fi
+
+    # Registry "domains" map: ensure each hostname has conf.d/<host>.conf -> active color (not only root .domain)
+    local extra_domains=""
+    extra_domains=$(echo "$registry" | jq -r '.domains | keys[]?' 2>/dev/null || echo "")
+    if [ -n "$extra_domains" ]; then
+        while IFS= read -r extra_d; do
+            [ -z "$extra_d" ] && continue
+            if [ "$extra_d" = "$domain" ]; then
+                continue
+            fi
+            print_status "Ensuring symlink for registry domain: $extra_d -> $target_color"
+            if ! switch_config_symlink "$extra_d" "$target_color"; then
+                print_warning "Failed to switch symlink for $extra_d (SSL or config missing?)"
+            fi
+        done <<< "$extra_domains"
+    fi
     
     return 0
 }

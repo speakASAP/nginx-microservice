@@ -16,7 +16,7 @@ BASE="${1:-sgipreal.com}"
 if [ "$BASE" = "statex.cz" ]; then
   SUBDOMAINS="allegro.statex.cz auth.statex.cz ai.statex.cz beauty.statex.cz crypto-ai-agent.statex.cz \
     flipflop.statex.cz logging.statex.cz marathon.statex.cz notifications.statex.cz payments.statex.cz \
-    shop-assistant.statex.cz speakasap.statex.cz warehouse.statex.cz catalog.statex.cz supplier.statex.cz \
+    shop-assistant.statex.cz speakasap-assessment.statex.cz speakasap-certification.statex.cz speakasap.statex.cz warehouse.statex.cz catalog.statex.cz supplier.statex.cz \
     orders.statex.cz heureka.statex.cz aukro.statex.cz bazos.statex.cz messenger.statex.cz \
     leads.statex.cz docs.statex.cz status.statex.cz"
 elif [ "$BASE" = "sgipreal.com" ]; then

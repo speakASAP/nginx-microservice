@@ -541,7 +541,16 @@ generate_proxy_locations() {
     
     # Generate generic API routes (for any service, not just frontend)
     # These routes are registered via nginx-api-routes.conf and can route to any service
-    local api_routes=$(echo "$registry" | jq -r '.api_routes // empty' 2>/dev/null || echo "")
+    local skip_global_api_routes="false"
+    if [ -n "$domain" ]; then
+        skip_global_api_routes=$(echo "$registry" | jq -r --arg d "$domain" '(.domains[$d].skip_global_api_routes // false) | tostring' 2>/dev/null || echo "false")
+    fi
+    local api_routes=""
+    if [ "$skip_global_api_routes" = "true" ]; then
+        api_routes=""
+    else
+        api_routes=$(echo "$registry" | jq -r '.api_routes // empty' 2>/dev/null || echo "")
+    fi
     if [ -n "$api_routes" ] && [ "$api_routes" != "null" ] && [ "$api_routes" != "[]" ]; then
         local routes_count=$(echo "$api_routes" | jq -r 'length' 2>/dev/null || echo "0")
         if [ "$routes_count" -gt 0 ]; then
@@ -947,14 +956,17 @@ ensure_blue_green_configs() {
         fi
     fi
     
-    # For statex service, generate configs for all domains defined in registry
-    if [ "$service_name" = "statex" ]; then
-        local registry=$(load_service_registry "$service_name")
-        local domains=$(echo "$registry" | jq -r '.domains | keys[]' 2>/dev/null)
-        
-        if [ -n "$domains" ]; then
-            # Generate configs for all statex domains
-            while IFS= read -r statex_domain; do
+    # For services that define a registry "domains" map, generate one vhost per hostname
+    local registry_multi=""
+    registry_multi=$(load_service_registry "$service_name" 2>/dev/null || echo "")
+    local domains=""
+    if [ -n "$registry_multi" ]; then
+        domains=$(echo "$registry_multi" | jq -r '.domains | keys[]?' 2>/dev/null || echo "")
+    fi
+    
+    if [ -n "$domains" ]; then
+        local registry="$registry_multi"
+        while IFS= read -r statex_domain; do
                 local domain_state=$(load_state "$service_name" "$statex_domain" 2>/dev/null)
                 local domain_active_color=$(echo "$domain_state" | jq -r '.active_color // "blue"')
                 
@@ -1065,6 +1077,11 @@ ensure_blue_green_configs() {
                     fi
                 fi
                 
+                # TLS material for this hostname (wildcard symlink or temp self-signed)
+                if type ensure_ssl_certificate >/dev/null 2>&1; then
+                    ensure_ssl_certificate "$statex_domain" "$service_name" || true
+                fi
+
                 # Generate configs if missing
                 if type log_message >/dev/null 2>&1; then
                     log_message "INFO" "$service_name" "config" "ensure" "Generating blue and green configs for $statex_domain"
@@ -1076,8 +1093,7 @@ ensure_blue_green_configs() {
                     return 1
                 fi
             done <<< "$domains"
-            return 0
-        fi
+        return 0
     fi
     
     # For non-multi-domain services or when domain is explicitly provided, use standard logic
