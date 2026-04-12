@@ -60,6 +60,8 @@ Create `nginx-api-routes.conf` in your service directory (preferably in `nginx/`
 /api/custom-route-1
 ```
 
+**Path rules (registry validation):** Each non-comment line must match `^[a-zA-Z0-9/._-]+$` only. Do not put Express-style dynamic segments (`:id`, `:projectId`) in this file; `deploy-smart.sh` skips them with a warning. Nginx uses **prefix** `location` blocks, so a line like `/api/widgets` already matches `/api/widgets/123`, `/api/widgets/123/events`, and so on—list the shortest stable prefix you need.
+
 **That's it!** One file for all services. The system automatically determines where to route based on your service structure.
 
 ## Service Registry
