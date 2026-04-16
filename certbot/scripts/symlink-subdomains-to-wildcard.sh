@@ -1,7 +1,7 @@
 #!/bin/sh
 # One-time: point subdomain certificate dirs at the shared wildcard base (e.g. alfares.cz).
 # Run from nginx-microservice: docker compose run --rm certbot /scripts/symlink-subdomains-to-wildcard.sh [base_domain]
-# Example: .../symlink-subdomains-to-wildcard.sh statex.cz
+# Example: .../symlink-subdomains-to-wildcard.sh alfares.cz
 # Example: .../symlink-subdomains-to-wildcard.sh sgipreal.com  (or no arg for backward compat)
 #
 # After issuing *.BASE + BASE (see request-cert-wildcard.sh and README "Wildcard certificates"):
@@ -13,12 +13,12 @@ set -e
 cd /etc/letsencrypt
 BASE="${1:-sgipreal.com}"
 
-if [ "$BASE" = "statex.cz" ]; then
-  SUBDOMAINS="allegro.statex.cz auth.statex.cz ai.statex.cz beauty.statex.cz crypto-ai-agent.statex.cz \
-    flipflop.statex.cz logging.statex.cz marathon.statex.cz notifications.statex.cz payments.statex.cz \
-    shop-assistant.statex.cz speakasap-assessment.statex.cz speakasap-certification.statex.cz speakasap.statex.cz warehouse.statex.cz catalog.statex.cz supplier.statex.cz \
-    orders.statex.cz heureka.statex.cz aukro.statex.cz bazos.statex.cz messenger.statex.cz \
-    leads.statex.cz docs.statex.cz status.statex.cz"
+if [ "$BASE" = "alfares.cz" ]; then
+  SUBDOMAINS="allegro.alfares.cz auth.alfares.cz ai.alfares.cz beauty.alfares.cz crypto-ai-agent.alfares.cz \
+    flipflop.alfares.cz logging.alfares.cz marathon.alfares.cz notifications.alfares.cz payments.alfares.cz \
+    shop-assistant.alfares.cz speakasap-assessment.alfares.cz speakasap-certification.alfares.cz speakasap.alfares.cz warehouse.alfares.cz catalog.alfares.cz supplier.alfares.cz \
+    orders.alfares.cz heureka.alfares.cz aukro.alfares.cz bazos.alfares.cz messenger.alfares.cz \
+    leads.alfares.cz docs.alfares.cz status.alfares.cz"
 elif [ "$BASE" = "sgipreal.com" ]; then
   SUBDOMAINS="database-server.sgipreal.com auth.sgipreal.com logging.sgipreal.com"
 elif [ "$BASE" = "alfares.cz" ]; then
@@ -30,7 +30,7 @@ elif [ "$BASE" = "alfares.cz" ]; then
     orchestrator.alfares.cz orders.alfares.cz payments.alfares.cz rehtani.alfares.cz shop-assistant.alfares.cz \
     speakasap.alfares.cz statex-ecosystem.alfares.cz suppliers.alfares.cz warehouse.alfares.cz"
 else
-  echo "Usage: symlink-subdomains-to-wildcard.sh [sgipreal.com|statex.cz|alfares.cz]"
+  echo "Usage: symlink-subdomains-to-wildcard.sh [sgipreal.com|alfares.cz|alfares.cz]"
   exit 1
 fi
 

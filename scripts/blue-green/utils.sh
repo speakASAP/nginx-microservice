@@ -635,10 +635,10 @@ auto_create_service_registry() {
     
     # 1. Try to extract from .env file (DOMAIN, SERVICE_NAME, or FRONTEND_URL)
     if [ -f "${service_path}/.env" ]; then
-        # Try DOMAIN variable first (e.g., DOMAIN=flipflop.statex.cz) - this is the correct source for domain
+        # Try DOMAIN variable first (e.g., DOMAIN=flipflop.alfares.cz) - this is the correct source for domain
         domain=$(grep -E "^DOMAIN=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
         
-        # If not found, try SERVICE_NAME (e.g., SERVICE_NAME=flipflop.statex.cz)
+        # If not found, try SERVICE_NAME (e.g., SERVICE_NAME=flipflop.alfares.cz)
         if [ -z "$domain" ]; then
             domain=$(grep -E "^SERVICE_NAME=" "${service_path}/.env" 2>/dev/null | head -1 | sed 's/.*=//' | tr -d '[:space:]' | sed 's|^https\?://||' | sed 's|/$||' || echo "")
         fi
@@ -971,7 +971,7 @@ ensure_ssl_certificate() {
         if type log_message >/dev/null 2>&1; then
             log_message "ERROR" "$service_name" "cert" "check" "No certificate material for domain: $domain (SSL_SELF_SIGNED_FALLBACK is not enabled)"
             log_message "INFO" "$service_name" "cert" "check" "From ${NGINX_PROJECT_DIR}: docker compose run --rm certbot /scripts/request-cert.sh ${domain}"
-            log_message "INFO" "$service_name" "cert" "check" "Wildcard *.statex.cz: docker compose run --rm certbot /scripts/request-cert-wildcard.sh statex.cz; add hostname to certbot/scripts/symlink-subdomains-to-wildcard.sh; run that script; set WILDCARD_CERT_DOMAINS=... statex.cz in .env"
+            log_message "INFO" "$service_name" "cert" "check" "Wildcard *.alfares.cz: docker compose run --rm certbot /scripts/request-cert-wildcard.sh alfares.cz; add hostname to certbot/scripts/symlink-subdomains-to-wildcard.sh; run that script; set WILDCARD_CERT_DOMAINS=... alfares.cz in .env"
         fi
         return 1
     fi

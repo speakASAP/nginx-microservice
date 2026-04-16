@@ -276,10 +276,10 @@ cat /path/to/nginx-microservice/state/crypto-ai-agent.json | jq .
 docker ps | grep crypto-ai
 
 # Check symlink (points to active color)
-readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+readlink nginx/conf.d/crypto-ai-agent.alfares.cz.conf
 
 # Compare with nginx config (active config)
-cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep upstream
+cat nginx/conf.d/crypto-ai-agent.alfares.cz.conf | grep upstream
 ```
 
 **Fix:**
@@ -339,13 +339,13 @@ docker compose exec nginx nginx -t
 docker exec nginx-microservice curl http://crypto-ai-frontend-blue:3100/
 
 # 4. Check SSL certificates
-docker exec nginx-microservice ls -la /etc/nginx/certs/crypto-ai-agent.statex.cz/
+docker exec nginx-microservice ls -la /etc/nginx/certs/crypto-ai-agent.alfares.cz/
 
 # 5. Check nginx logs
 docker compose logs nginx | tail -50
 
 # 6. Test SSL from server
-docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-agent.statex.cz'
+docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-agent.alfares.cz'
 ```
 
 **Common Causes:**
@@ -354,10 +354,10 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
 
    ```bash
    # Check certificates
-   ls -la certificates/crypto-ai-agent.statex.cz/
+   ls -la certificates/crypto-ai-agent.alfares.cz/
    
    # Regenerate nginx config for the domain using validated pipeline
-   ./scripts/add-domain.sh crypto-ai-agent.statex.cz
+   ./scripts/add-domain.sh crypto-ai-agent.alfares.cz
    # This writes a config into nginx/conf.d/staging/, validates it in isolation with existing configs,
    # promotes it to nginx/conf.d/blue-green/ on success, and sends invalid configs to nginx/conf.d/rejected/
    # without breaking a running nginx instance.
@@ -402,10 +402,10 @@ docker exec nginx-microservice curl -k https://localhost/ -H 'Host: crypto-ai-ag
 cat state/crypto-ai-agent.json | jq .active_color
 
 # Check nginx config symlink
-readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+readlink nginx/conf.d/crypto-ai-agent.alfares.cz.conf
 
 # Check active config upstream blocks
-cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 2 upstream
+cat nginx/conf.d/crypto-ai-agent.alfares.cz.conf | grep -A 2 upstream
 
 # Verify switch-traffic script ran
 tail -20 logs/blue-green/deploy.log | grep switch
@@ -418,10 +418,10 @@ tail -20 logs/blue-green/deploy.log | grep switch
 ./scripts/blue-green/switch-traffic.sh crypto-ai-agent
 
 # Verify symlink points to correct color
-readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+readlink nginx/conf.d/crypto-ai-agent.alfares.cz.conf
 
 # Verify active color in config
-cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep weight
+cat nginx/conf.d/crypto-ai-agent.alfares.cz.conf | grep weight
 
 # Nginx reload is automatic, but you can verify
 docker compose exec nginx nginx -s reload
@@ -530,10 +530,10 @@ cat state/crypto-ai-agent.json | jq .
 docker ps | grep crypto-ai
 
 # Nginx config symlink
-readlink nginx/conf.d/crypto-ai-agent.statex.cz.conf
+readlink nginx/conf.d/crypto-ai-agent.alfares.cz.conf
 
 # Active config upstream blocks
-cat nginx/conf.d/crypto-ai-agent.statex.cz.conf | grep -A 5 upstream
+cat nginx/conf.d/crypto-ai-agent.alfares.cz.conf | grep -A 5 upstream
 
 # Network connectivity
 docker network inspect nginx-network | grep crypto-ai

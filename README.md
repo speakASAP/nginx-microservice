@@ -126,7 +126,7 @@ docker compose up -d
 ### 3. Add Your First Domain
 
 ```bash
-./scripts/add-domain.sh statex.cz statex.cz 3000
+./scripts/add-domain.sh alfares.cz alfares.cz 3000
 ```
 
 ### 4. Setup Certificate Renewal
@@ -309,7 +309,7 @@ CERTBOT_EMAIL=admin@example.com          # Email for Let's Encrypt (default: adm
 CERTBOT_STAGING=false                    # Use staging environment (for testing)
 
 # Wildcard Certificates (Optional)
-WILDCARD_CERT_DOMAINS=                   # Space-separated base domains with *.domain cert (e.g. statex.cz sgipreal.com)
+WILDCARD_CERT_DOMAINS=                   # Space-separated base domains with *.domain cert (e.g. alfares.cz sgipreal.com)
 
 # Docker Network Configuration
 NETWORK_NAME=nginx-network               # Docker network name
@@ -347,7 +347,7 @@ REDIS_IMAGE=                             # Optional: redis image for scripts
 
 4. **MULTI_DOMAIN_SERVICE_NAME**: If you have a service that handles multiple domains (like the statex service), set this to that service name. Defaults to "statex" for backward compatibility.
 
-5. **WILDCARD_CERT_DOMAINS**: Optional. Space-separated base domains that have a wildcard cert (e.g. `sgipreal.com`, `statex.cz`). When set, subdomains use the wildcard cert via symlink; no per-subdomain cert requests. Requires one-time wildcard request via `request-cert-wildcard.sh` and `secrets/cloudflare.ini` for DNS-01.
+5. **WILDCARD_CERT_DOMAINS**: Optional. Space-separated base domains that have a wildcard cert (e.g. `sgipreal.com`, `alfares.cz`). When set, subdomains use the wildcard cert via symlink; no per-subdomain cert requests. Requires one-time wildcard request via `request-cert-wildcard.sh` and `secrets/cloudflare.ini` for DNS-01.
 
 6. **DEFAULT_DOMAIN_SUFFIX**: Optional. Used for:
    - Fallback when a service's domain cannot be detected from its `.env` file
@@ -507,13 +507,13 @@ Each domain has two certificate files in `./certificates/<domain>/`:
 
 ### Wildcard certificates (DNS-01) — recommended for many subdomains
 
-**Strategy**: One certificate per base domain (e.g. `*.statex.cz` + `statex.cz`, or `*.sgipreal.com` + `sgipreal.com`) instead of many single-domain certs.
+**Strategy**: One certificate per base domain (e.g. `*.alfares.cz` +alfares.czczcz`, or `*.sgipreal.com` + `sgipreal.com`) instead of many single-domain certs.
 
 - ✅ Scales: add subdomains without re-issuing certs
 - ✅ DNS-01 challenge (no HTTP/webroot needed for validation)
 - ✅ Same cert used for all subdomains via symlinks; fewer Certbot/Let's Encrypt API calls
 
-**Setup** (same steps for any Cloudflare-managed domain, e.g. statex.cz or sgipreal.com):
+**Setup** (same steps for any Cloudflare-managed domain, e.g. alfares.cz or sgipreal.com):
 
 1. **DNS at Cloudflare**: Point the domain's nameservers to Cloudflare.
 2. **Create API token**: Cloudflare Dashboard → My Profile → API Tokens → Create Token, template "Edit zone DNS", zone scope for your domain (or "All zones" if multiple). Copy the token.
@@ -525,12 +525,12 @@ Each domain has two certificate files in `./certificates/<domain>/`:
    chmod 600 secrets/cloudflare.ini
    ```
 
-   For multiple zones (e.g. statex.cz and sgipreal.com), use one token with zone scope "All zones" or add each zone to the token.
+   For multiple zones (e.g. alfares.cz and sgipreal.com), use one token with zone scope "All zones" or add each zone to the token.
 4. **Request wildcard once** (from nginx-microservice directory):
 
    ```bash
-   # For statex.cz (reduces Certbot/Let's Encrypt workload for all *.statex.cz)
-   docker compose run --rm certbot /scripts/request-cert-wildcard.sh statex.cz
+   # For alfares.cz (reduces Certbot/Let's Encrypt workload for all alfares.czczcz)
+   docker compose run --rm certbot /scripts/request-cert-wildcard.sh alfares.cz
 
    # Or for sgipreal.com
    docker compose run --rm certbot /scripts/request-cert-wildcard.sh sgipreal.com
@@ -540,15 +540,15 @@ Each domain has two certificate files in `./certificates/<domain>/`:
 5. **Configure .env** (space-separated if multiple base domains):
 
    ```bash
-   WILDCARD_CERT_DOMAINS=statex.cz
+   WILDCARD_CERT_DOMAINS=alfares.cz
    # or: WILDCARD_CERT_DOMAINS=sgipreal.com
-   # or: WILDCARD_CERT_DOMAINS=statex.cz sgipreal.com
+   # or: WILDCARD_CERT_DOMAINS=alfares.cz sgipreal.com
    ```
 
 6. **One-time symlink of existing subdomain cert dirs** (optional; only if you already had per-subdomain certs and want to switch to wildcard without redeploying each service):
 
    ```bash
-   docker compose run --rm certbot /scripts/symlink-subdomains-to-wildcard.sh statex.cz
+   docker compose run --rm certbot /scripts/symlink-subdomains-to-wildcard.sh alfares.cz
    # or: .../symlink-subdomains-to-wildcard.sh sgipreal.com
    # For alfares (one *.alfares.cz + alfares.cz wildcard; then point all subdomains at that material):
    docker compose run --rm certbot /scripts/request-cert-wildcard.sh alfares.cz
@@ -558,7 +558,7 @@ Each domain has two certificate files in `./certificates/<domain>/`:
    Then reload nginx. New deployments will create symlinks automatically via `ensure_ssl_certificate`.
 
    **`alfares.cz` checklist:** The hostnames processed by `symlink-subdomains-to-wildcard.sh alfares.cz` are listed **in the script** (`certbot/scripts/symlink-subdomains-to-wildcard.sh`). Whenever you add a **new** `*.alfares.cz` nginx vhost, **append that hostname to `SUBDOMAINS`** in the script and re-run it after the wildcard cert exists; otherwise nginx may still read an old real directory or a wrong symlink and clients will see hostname/cert mismatches (e.g. S3 clients to `minio.alfares.cz`).
-7. **Deployments**: For any service domain (e.g. `allegro.statex.cz`, `database-server.sgipreal.com`), `ensure_ssl_certificate` will create a symlink to the base domain cert. No per-subdomain cert requests.
+7. **Deployments**: For any service domain (e.g. `allegro.alfares.cz`, `database-server.sgipreal.com`), `ensure_ssl_certificate` will create a symlink to the base domain cert. No per-subdomain cert requests.
 
 **Renewal**: `renew-cert.sh` uses `certbot renew`, which renews both webroot and DNS-01 certs. Ensure `secrets/cloudflare.ini` is mounted (default docker-compose mounts `./secrets`).
 

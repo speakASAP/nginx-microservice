@@ -80,7 +80,7 @@ Service registry files are automatically generated with the following structure:
 {
   "service_name": "allegro-service",
   "production_path": "/home/statex/allegro-service",
-  "domain": "allegro.statex.cz",
+  "domain": "allegro.alfares.cz",
   "docker_compose_file": "docker-compose.green.yml",
   "docker_project_base": "allegro_service",
   "services": {
@@ -96,7 +96,7 @@ Service registry files are automatically generated with the following structure:
     }
   },
   "domains": {
-    "allegro.statex.cz": {
+    "allegro.alfares.cz": {
       "active_color": "green",
       "services": ["frontend"]
     }
@@ -159,7 +159,7 @@ The deployment script will:
 
 ```bash
 # Test the service
-curl https://allegro.statex.cz/health
+curl https://allegro.alfares.cz/health
 ```
 
 ## Production-Ready Services

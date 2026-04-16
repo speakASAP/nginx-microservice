@@ -22,16 +22,16 @@ Each domain has two nginx configuration files:
 
 Example:
 
-- `crypto-ai-agent.statex.cz.blue.conf` - Blue configuration
-- `crypto-ai-agent.statex.cz.green.conf` - Green configuration  
-- `crypto-ai-agent.statex.cz.conf` - Symlink (points to blue or green)
+- `crypto-ai-agent.alfares.cz.blue.conf` - Blue configuration
+- `crypto-ai-agent.alfares.cz.green.conf` - Green configuration  
+- `crypto-ai-agent.alfares.cz.conf` - Symlink (points to blue or green)
 
 ## Upstream Configuration
 
 Each service has upstream blocks that define which containers receive traffic:
 
 ```nginx
-# Blue config: crypto-ai-agent.statex.cz.blue.conf
+# Blue config: crypto-ai-agent.alfares.cz.blue.conf
 upstream crypto-ai-frontend {
     server crypto-ai-frontend-blue:3100 weight=100;
     server crypto-ai-frontend-green:3100 backup;
@@ -46,7 +46,7 @@ upstream crypto-ai-backend {
 ```
 
 ```nginx
-# Green config: crypto-ai-agent.statex.cz.green.conf
+# Green config: crypto-ai-agent.alfares.cz.green.conf
 upstream crypto-ai-frontend {
     server crypto-ai-frontend-blue:3100 backup;
     server crypto-ai-frontend-green:3100 weight=100;
@@ -132,7 +132,7 @@ Each service registry file in `service-registry/{service}.json` has the followin
 {
   "service_name": "crypto-ai-agent",
   "production_path": "/home/statex/crypto-ai-agent",
-  "domain": "crypto-ai-agent.statex.cz",
+  "domain": "crypto-ai-agent.alfares.cz",
   "docker_compose_file": "docker-compose.green.yml",
   "docker_project_base": "crypto_ai_agent",
   "services": {
@@ -154,7 +154,7 @@ Each service registry file in `service-registry/{service}.json` has the followin
     }
   },
   "domains": {
-    "crypto-ai-agent.statex.cz": {
+    "crypto-ai-agent.alfares.cz": {
       "active_color": "green",
       "services": ["frontend", "backend"]
     }

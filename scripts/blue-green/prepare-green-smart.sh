@@ -248,10 +248,11 @@ if [ ${#SERVICES_TO_BUILD[@]} -gt 0 ]; then
     export DOCKER_BUILDKIT=1
     export COMPOSE_DOCKER_CLI_BUILD=1
     
-    # For flipflop and ai-microservice, build sequentially to avoid CPU/memory overload.
+    # For flipflop (registry: flipflop-service) and ai-microservice, build sequentially to avoid
+    # CPU/memory overload and npm registry ECONNRESET from many parallel npm installs.
     # Parallel "exporting to image" can cause OOM and "Connection closed by remote host".
     # Other applications continue to build in parallel for speed.
-    if [ "$SERVICE_NAME" = "flipflop" ] || [ "$SERVICE_NAME" = "ai-microservice" ]; then
+    if [ "$SERVICE_NAME" = "flipflop" ] || [ "$SERVICE_NAME" = "flipflop-service" ] ]; then
         SERVICES_STRING=$(IFS=' '; echo "${SERVICES_TO_BUILD[*]}")
         log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Building services sequentially (${SERVICE_NAME}): ${SERVICES_STRING}"
         
@@ -367,6 +368,26 @@ if [ -f "$OLD_COMPOSE_FILE" ]; then
         log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Old ${OLD_COLOR} containers stopped (kept on disk for rollback safety)"
     else
         log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "No old ${OLD_COLOR} containers found to stop"
+    fi
+
+    # Running stacks may use a different compose project label (e.g. directory name
+    # "payments-microservice") than deploy's -p "${DOCKER_PROJECT_BASE}_${color}".
+    # In that case compose stop is a no-op but the old color still holds PORT_BLUE/PORT_GREEN.
+    SERVICE_KEYS_STRAY=$(echo "$REGISTRY" | jq -r '.services | keys[]' 2>/dev/null || echo "")
+    if [ -n "$SERVICE_KEYS_STRAY" ] && [ -n "$OLD_COLOR" ]; then
+        while IFS= read -r service_key; do
+            [ -z "$service_key" ] && continue
+            CBASE_STRAY=$(echo "$REGISTRY" | jq -r ".services[\"$service_key\"].container_name_base // empty" 2>/dev/null)
+            if [ -z "$CBASE_STRAY" ] || [ "$CBASE_STRAY" = "null" ]; then
+                CBASE_STRAY="${DOCKER_PROJECT_BASE}-${service_key}"
+            fi
+            STRAY_CONTAINER="${CBASE_STRAY}-${OLD_COLOR}"
+            if docker ps --format "{{.Names}}" 2>/dev/null | grep -qE "^${STRAY_CONTAINER}$"; then
+                log_message "INFO" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Stopping old ${OLD_COLOR} container by name (compose project name mismatch): ${STRAY_CONTAINER}"
+                docker stop "$STRAY_CONTAINER" 2>/dev/null || true
+            fi
+        done <<< "$SERVICE_KEYS_STRAY"
+        sleep 2
     fi
 else
     log_message "WARNING" "$SERVICE_NAME" "$PREPARE_COLOR" "prepare" "Old compose file not found: $OLD_COMPOSE_FILE, will try to stop containers by name pattern"

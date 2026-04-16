@@ -13,21 +13,21 @@
 Each application has its **own domain** and gets its **own nginx server block**:
 
 ```nginx
-# app1.statex.cz
+# app1.alfares.cz
 server {
-    server_name app1.statex.cz www.app1.statex.cz;
+    server_name app1.alfares.cz www.appalfares.czczcz;
     # ... app1's routes ...
 }
 
-# app2.statex.cz
+# app2.alfares.cz
 server {
-    server_name app2.statex.cz www.app2.statex.cz;
+    server_name app2.alfares.cz www.appalfares.czczcz;
     # ... app2's routes ...
 }
 
-# app3.statex.cz
+# app3.alfares.cz
 server {
-    server_name app3.statex.cz www.app3.statex.cz;
+    server_name app3.alfares.cz www.appalfares.czczcz;
     # ... app3's routes ...
 }
 ```
@@ -62,7 +62,7 @@ Each service has its **own service registry entry** with its own API routes:
 ```json
 {
   "service_name": "app1-service",
-  "domain": "app1.statex.cz",
+  "domain": "app1.alfares.cz",
   "frontend_api_routes": [
     "/api/users",
     "/api/users/collect-contact"
@@ -74,7 +74,7 @@ Each service has its **own service registry entry** with its own API routes:
 ```json
 {
   "service_name": "app2-service",
-  "domain": "app2.statex.cz",
+  "domain": "app2.alfares.cz",
   "frontend_api_routes": [
     "/api/users",
     "/api/users/collect-contact"
@@ -86,14 +86,14 @@ Each service has its **own service registry entry** with its own API routes:
 
 ## Request Flow Example
 
-### Request: `POST https://app1.statex.cz/api/users/test-user-123/submissions`
+### Request: `POST https://app1.alfares.cz/api/users/test-user-123/submissions`
 
 1. **Nginx receives request**
-   - Host header: `app1.statex.cz`
+   - Host header: `app1.alfares.cz`
    - Path: `/api/users/test-user-123/submissions`
 
 2. **Domain matching**
-   - Nginx matches `server_name app1.statex.cz`
+   - Nginx matches `server_name app1.alfares.cz`
    - Uses app1's server block configuration
 
 3. **Location matching (within app1's server block)**
@@ -104,14 +104,14 @@ Each service has its **own service registry entry** with its own API routes:
    - Request goes to: `http://app1-frontend-green/api/users/test-user-123/submissions`
    - App1's Next.js handles the route
 
-### Request: `POST https://app2.statex.cz/api/users/test-user-123/submissions`
+### Request: `POST https://app2.alfares.cz/api/users/test-user-123/submissions`
 
 1. **Nginx receives request**
-   - Host header: `app2.statex.cz`
+   - Host header: `app2.alfares.cz`
    - Path: `/api/users/test-user-123/submissions`
 
 2. **Domain matching**
-   - Nginx matches `server_name app2.statex.cz`
+   - Nginx matches `server_name app2.alfares.cz`
    - Uses app2's server block configuration
 
 3. **Location matching (within app2's server block)**
@@ -151,12 +151,12 @@ Multiple applications can have the same API routes because:
 
 ```
 nginx/conf.d/blue-green/
-├── app1.statex.cz.blue.conf      ← app1's config
-├── app1.statex.cz.green.conf
-├── app2.statex.cz.blue.conf      ← app2's config
-├── app2.statex.cz.green.conf
-├── app3.statex.cz.blue.conf      ← app3's config
-└── app3.statex.cz.green.conf
+├── app1.alfares.cz.blue.conf      ← app1's config
+├── app1.alfares.cz.green.conf
+├── app2.alfares.cz.blue.conf      ← app2's config
+├── app2.alfares.cz.green.conf
+├── app3.alfares.cz.blue.conf      ← app3's config
+└── app3.alfares.cz.green.conf
 ```
 
 Each config file contains:
@@ -173,7 +173,7 @@ The fix (adding trailing slash to `proxy_pass`) is needed for **all applications
 ### Without Fix (Current - Broken)
 
 ```nginx
-# app1.statex.cz
+# app1.alfares.cz
 location /api/users {
     proxy_pass http://app1-frontend-green/api/users;    ← Strips sub-path
 }
@@ -186,7 +186,7 @@ location /api/users {
 ### With Fix (After - Working)
 
 ```nginx
-# app1.statex.cz
+# app1.alfares.cz
 location /api/users {
     proxy_pass http://app1-frontend-green/api/users/;    ← Preserves sub-path
 }

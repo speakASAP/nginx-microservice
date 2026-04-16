@@ -33,7 +33,7 @@ The service registry file will be automatically created during deployment. Howev
 {
   "service_name": "my-microservice",
   "production_path": "/home/statex/my-microservice",
-  "domain": "my-service.statex.cz",
+  "domain": "my-service.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "my_microservice",
   "services": {
@@ -56,7 +56,7 @@ The service registry file will be automatically created during deployment. Howev
 {
   "service_name": "my-microservice",
   "production_path": "/home/statex/my-microservice",
-  "domain": "my-service.statex.cz",
+  "domain": "my-service.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "my_microservice",
   "services": {
@@ -81,7 +81,7 @@ The service registry file will be automatically created during deployment. Howev
   "service_name": "my-microservice",
   "service_path": "/path/to/my-microservice",
   "production_path": "/home/statex/my-microservice",
-  "domain": "my-service.statex.cz",
+  "domain": "my-service.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "my_microservice",
   "services": {
@@ -114,7 +114,7 @@ The service registry file will be automatically created during deployment. Howev
 - **service_name**: Name of the service (must end with `-microservice` for microservices)
 - **service_path**: Local development path (optional)
 - **production_path**: Production server path where the service code lives
-- **domain**: Domain name for the service (e.g., `my-service.statex.cz`)
+- **domain**: Domain name for the service (e.g., `my-service.alfares.cz`)
 - **docker_compose_file**: Docker compose file to use (usually `docker-compose.blue.yml`)
 - **docker_project_base**: Docker compose project name base
 - **services**: Object defining all services (frontend, backend, etc.)
@@ -220,14 +220,14 @@ docker ps | grep my-microservice
 ### Check Nginx Config
 
 ```bash
-ls -la nginx/conf.d/my-service.statex.cz.conf
-cat nginx/conf.d/blue-green/my-service.statex.cz.blue.conf
+ls -la nginx/conf.d/my-service.alfares.cz.conf
+cat nginx/conf.d/blue-green/my-service.alfares.cz.blue.conf
 ```
 
 ### Test Health Endpoint
 
 ```bash
-curl https://my-service.statex.cz/health
+curl https://my-service.alfares.cz/health
 ```
 
 ### Check Logs
@@ -280,7 +280,7 @@ If you get "Service not found in registry":
 {
   "service_name": "api-microservice",
   "production_path": "/home/statex/api-microservice",
-  "domain": "api.statex.cz",
+  "domain": "api.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "api_microservice",
   "services": {
@@ -300,7 +300,7 @@ If you get "Service not found in registry":
 {
   "service_name": "api-microservice",
   "production_path": "/home/statex/api-microservice",
-  "domain": "api.statex.cz",
+  "domain": "api.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "api_microservice",
   "services": {
@@ -327,7 +327,7 @@ cd /home/statex/nginx-microservice
 ### **Verify**
 
 ```bash
-curl https://api.statex.cz/health
+curl https://api.alfares.cz/health
 ```
 
 ## Next Steps

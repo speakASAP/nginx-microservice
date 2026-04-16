@@ -46,10 +46,10 @@ nginx-microservice/
 │   ├── reload-nginx.sh
 │   └── setup-cert-renewal.sh
 ├── certificates/ (host storage)
-│   ├── statex.cz/
+│   ├── alfares.cz/
 │   │   ├── fullchain.pem
 │   │   └── privkey.pem
-│   └── crypto-ai-agent.statex.cz/
+│   └── crypto-ai-agent.alfares.cz/
 │       ├── fullchain.pem
 │       └── privkey.pem
 ├── logs/ (host storage)
@@ -123,8 +123,8 @@ nginx-microservice/
 
 ### Phase 7: Testing
 
-- [ ] Test statex.cz configuration
-- [ ] Test crypto-ai-agent.statex.cz configuration
+- [ ] Test alfares.cz configuration
+- [ ] Test crypto-ai-agent.alfares.cz configuration
 - [ ] Test add-domain.sh script
 - [ ] Test certificate requesting
 - [ ] Test certificate renewal
@@ -257,7 +257,7 @@ Guarantees:
 4. Run `docker-compose up -d`
 5. Setup certificate renewal: `./scripts/setup-cert-renewal.sh`
 6. Verify nginx is running: `docker-compose ps`
-7. Test domains: `curl https://statex.cz`
+7. Test domains: `curl https://alfares.cz`
 
 ## Maintenance
 
