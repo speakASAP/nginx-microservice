@@ -131,19 +131,35 @@ log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Phase 0 completed: Infr
 
 # Register application in auth-microservice (if auth-microservice is available)
 log_message "INFO" "$SERVICE_NAME" "deploy" "deploy" "Registering application in auth-microservice"
-SERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/${SERVICE_NAME}"
+SERVICE_DIR=""
+if [ -f "$REGISTRY_FILE" ] && command -v jq >/dev/null 2>&1; then
+    SERVICE_DIR="$(jq -r '.production_path // empty' "$REGISTRY_FILE" 2>/dev/null || true)"
+fi
+
+if [ -z "$SERVICE_DIR" ]; then
+    SERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/${SERVICE_NAME}"
+fi
+
 if [ -d "$SERVICE_DIR" ] && [ -f "${SERVICE_DIR}/scripts/register-application.sh" ]; then
-    if bash "${SERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" 2>/dev/null; then
+    if AUTH_SERVICE_URL="${AUTH_SERVICE_PUBLIC_URL:-https://auth.alfares.cz}" \
+       bash "${SERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" "${SERVICE_DIR}/.env" 2>/dev/null; then
         log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Application registered in auth-microservice"
     else
         log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (will be handled by seed script)"
     fi
 elif [ -d "$SERVICE_DIR" ] && [ -f "${SERVICE_DIR}/.env" ]; then
     # Try to register using auth-microservice script if available
-    AUTH_MICROSERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/auth-microservice"
+    AUTH_MICROSERVICE_DIR=""
+    if [ -n "$SERVICE_DIR" ]; then
+        AUTH_MICROSERVICE_DIR="$(dirname "$SERVICE_DIR")/auth-microservice"
+    fi
+    if [ ! -d "$AUTH_MICROSERVICE_DIR" ]; then
+        AUTH_MICROSERVICE_DIR="${PROJECT_BASE_PATH:-/home/statex}/auth-microservice"
+    fi
     if [ -d "$AUTH_MICROSERVICE_DIR" ] && [ -f "${AUTH_MICROSERVICE_DIR}/scripts/register-application.sh" ]; then
         cd "$SERVICE_DIR"
-        if bash "${AUTH_MICROSERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" 2>/dev/null; then
+        if AUTH_SERVICE_URL="${AUTH_SERVICE_PUBLIC_URL:-https://auth.alfares.cz}" \
+           bash "${AUTH_MICROSERVICE_DIR}/scripts/register-application.sh" "$SERVICE_NAME" "${SERVICE_DIR}/.env" 2>/dev/null; then
             log_message "SUCCESS" "$SERVICE_NAME" "deploy" "deploy" "Application registered in auth-microservice"
         else
             log_message "WARNING" "$SERVICE_NAME" "deploy" "deploy" "Application registration skipped (will be handled by seed script)"

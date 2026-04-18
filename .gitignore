@@ -64,3 +64,50 @@ service-registry/*.local
 # State files (runtime deployment state - auto-generated)
 state/*.json
 !state/.gitkeep
+
+# --- baseline: secrets-env-artifacts (synced across repos) ---
+
+node_modules/
+dist/
+.env
+.venv
+.venv*
+k8s/secret.yaml
+# Local credential files (never commit)
+secrets/
+**/client_secret*.json
+**/*.apps.googleusercontent.com.json
+*.tsbuildinfo
+# Security: Never commit keys or certificates
+keys/*
+!keys/README.md
+*.cer
+*.pfx
+*.p12
+*private*
+*.rsa
+*.dsa
+*.ec
+*.der
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+# Environments
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+# Local configuration
+local_config.py
+local_settings.py
+# Backup files
+*.backup*
+*.old
+# Compressed files
+*.zip
+*.tar.gz
+*.rar
+*.7z
