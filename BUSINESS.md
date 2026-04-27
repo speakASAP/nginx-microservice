@@ -4,7 +4,7 @@
 
 ## Goal
 
-Centralized reverse proxy managing SSL certificates (Let's Encrypt), routing, and blue/green deployments for all Statex domains.
+Centralized reverse proxy managing SSL certificates (Let's Encrypt), routing, and blue/green deployments for all alfares.cz domains.
 
 ## Constraints
 
@@ -18,5 +18,5 @@ All public-facing services.
 
 ## Key Scripts
 
-- Deploy: `./scripts/blue-green/deploy-smart.sh <service>`
+- Deploy: `../<service>/scripts/deploy.sh `
 - SSL renew: automated via cron

@@ -23,9 +23,10 @@ Each application service owns its nginx config under its own `nginx/` directory.
 ### Key scripts
 ```bash
 # Deploy a service (run from nginx-microservice dir)
-./scripts/blue-green/deploy-smart.sh <service-name>
+../<service-name>/scripts/deploy.sh
 
 # Config location per service
+../<service-name>/nginx/
 nginx/sites/<service>.conf
 nginx-api-routes.conf
 ```

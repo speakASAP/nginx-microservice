@@ -2,9 +2,9 @@
 
 A centralized reverse proxy microservice for managing multiple domains and subdomains with automatic SSL certificate management via Let's Encrypt.
 
-## Migration Note
+## Certificates
 
-**✅ Migration Complete** (October 31, 2024): SSL certificates and Let's Encrypt data have been migrated from `statex-infrastructure` to this nginx-microservice. The `certificates/` directory now contains:
+The `certificates/` directory now contains:
 
 - Let's Encrypt certificates from `statex-infrastructure/letsencrypt/`
 - Let's Encrypt account data from `statex-infrastructure/letsencrypt-persistent/`
@@ -108,28 +108,19 @@ The scripts are organized into a modular architecture for maintainability:
 
 ## Quick Start
 
-### 1. Clone and Setup
-
-```bash
-git clone <repository-url>
-cd nginx-microservice
-cp .env.example .env
-# Edit .env with your settings
-```
-
-### 2. Start Services
+### 1. Start Services
 
 ```bash
 docker compose up -d
 ```
 
-### 3. Add Your First Domain
+### 2. Add Your First Domain
 
 ```bash
 ./scripts/add-domain.sh alfares.cz alfares.cz 3000
 ```
 
-### 4. Setup Certificate Renewal
+### 3. Setup Certificate Renewal
 
 ```bash
 ./scripts/setup-cert-renewal.sh
@@ -541,7 +532,6 @@ Each domain has two certificate files in `./certificates/<domain>/`:
 
    ```bash
    WILDCARD_CERT_DOMAINS=alfares.cz
-   # or: WILDCARD_CERT_DOMAINS=sgipreal.com
    # or: WILDCARD_CERT_DOMAINS=alfares.cz sgipreal.com
    ```
 
@@ -774,40 +764,11 @@ Edit domain config files in `nginx/conf.d/` or modify the template in `nginx/tem
 4. **Rate Limiting**: Configured per domain to prevent abuse
 5. **Security Headers**: HSTS, X-Frame-Options, CSP, etc.
 
-## License
-
-MIT License
-
-Copyright (c) 2025 Sergej
-
-See [LICENSE](LICENSE) file for details.
-
 ## Blue/Green Deployment
 
 The nginx-microservice includes a zero-downtime blue/green deployment system for services.
 
-### Standardized Services
-
-All services are now standardized and managed through the blue/green deployment system:
-
-#### Microservices
-
-- **ai-microservice** - AI microservice
-- **auth-microservice** - Authentication service
-- **database-server** - Database infrastructure (shared)
-- **logging-microservice** - Centralized logging service
-- **nginx-microservice** - This reverse proxy service
-- **notifications-microservice** - Notification service
-- **payments-microservice** - Payment processing service
-
-#### Applications
-
-- **allegro** - Allegro sales platform management
-- **crypto-ai-agent** - Crypto AI agent application
-- **flipflop** - flipflop platform
-- **statex** - Main statex platform application
-
-### Service Dependencies and Startup Order
+## Service Dependencies and Startup Order
 
 All services have dependencies that must be respected when starting the system. See **[Service Dependencies Guide](docs/SERVICE_DEPENDENCIES.md)** for complete details.
 
