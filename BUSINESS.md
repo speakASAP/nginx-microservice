@@ -1,5 +1,5 @@
 # Business: nginx-microservice
->
+
 > ⚠️ IMMUTABLE BY AI.
 
 ## Goal
@@ -10,7 +10,8 @@ Centralized reverse proxy managing SSL certificates (Let's Encrypt), routing, an
 
 - AI must never modify nginx configs that affect production routing without review
 - SSL certs managed by Certbot — do not manually edit
-- blue/green switch only via deploy-smart.sh script
+- Blue/green switch only via `deploy-smart.sh`
+- Secrets via Vault — see [../shared/docs/VAULT.md](../shared/docs/VAULT.md)
 
 ## Consumers
 
@@ -18,5 +19,5 @@ All public-facing services.
 
 ## Key Scripts
 
-- Deploy: `../<service>/scripts/deploy.sh `
+- Deploy: `../<service>/scripts/deploy.sh`
 - SSL renew: automated via cron

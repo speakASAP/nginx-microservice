@@ -1,321 +1,82 @@
-# Blue/Green Deployment Guide
+# Blue/Green Deployment
 
-This document explains how blue/green deployment works in the nginx-microservice ecosystem.
+Zero-downtime deployments by running two environments (blue/green). Only one receives live traffic at a time, switched via nginx config symlinks.
 
-## Overview
+> **Scope**: nginx-microservice itself uses blue/green Docker containers. K8s services in `statex-apps` use Kubernetes rolling updates instead.
 
-Blue/green deployment allows zero-downtime updates by running two identical production environments (blue and green). Only one environment receives live traffic at a time.
+## Config Structure
 
-## How It Works
+Each domain has two nginx configs + a symlink:
 
-1. **Two Environments**: Blue (current production) and Green (new deployment)
-2. **Traffic Switching**: Nginx routes traffic to the active environment via symlinks
-3. **Health Checks**: Services must pass health checks before traffic is switched
-4. **Rollback**: Quick rollback by switching symlink back to previous environment
+```
+nginx/conf.d/blue-green/
+├── crypto-ai-agent.alfares.cz.blue.conf   ← blue config
+├── crypto-ai-agent.alfares.cz.green.conf  ← green config
+└── crypto-ai-agent.alfares.cz.conf        ← symlink → active color
+```
 
-## Configuration Structure
-
-Each domain has two nginx configuration files:
-
-- `{domain}.{color}.conf` - Full nginx config for blue or green environment
-- `{domain}.conf` - Symlink pointing to the active configuration
-
-Example:
-
-- `crypto-ai-agent.alfares.cz.blue.conf` - Blue configuration
-- `crypto-ai-agent.alfares.cz.green.conf` - Green configuration  
-- `crypto-ai-agent.alfares.cz.conf` - Symlink (points to blue or green)
-
-## Upstream Configuration
-
-Each service has upstream blocks that define which containers receive traffic:
+## Upstream Blocks
 
 ```nginx
-# Blue config: crypto-ai-agent.alfares.cz.blue.conf
+# blue.conf — blue gets all traffic
 upstream crypto-ai-frontend {
     server crypto-ai-frontend-blue:3100 weight=100;
     server crypto-ai-frontend-green:3100 backup;
 }
 
-upstream crypto-ai-backend {
-    server crypto-ai-backend-blue:3102 weight=100;
-    server crypto-ai-backend-green:3102 backup;
-}
-
-# ... server blocks ...
-```
-
-```nginx
-# Green config: crypto-ai-agent.alfares.cz.green.conf
+# green.conf — green gets all traffic
 upstream crypto-ai-frontend {
     server crypto-ai-frontend-blue:3100 backup;
     server crypto-ai-frontend-green:3100 weight=100;
 }
-
-upstream crypto-ai-backend {
-    server crypto-ai-backend-blue:3102 backup;
-    server crypto-ai-backend-green:3102 weight=100;
-}
-
-# ... server blocks ...
 ```
 
-### Switching Mechanism
+Switching updates the symlink and reloads nginx (graceful, no dropped connections).
 
-When switching traffic:
-
-1. **Symlink update**: `{domain}.conf` symlink is updated to point to the new color's config
-2. **Nginx reload**: Nginx configuration is reloaded (graceful, no connection drops)
-3. **Traffic flow**: New requests go to the new environment, existing connections complete on old environment
-
-## Deployment Process
-
-### 1. Prepare Green Environment
+## Scripts
 
 ```bash
-# Start green containers
-cd /home/statex/{application}
-docker-compose -f docker-compose.green.yml up -d
-
-# Wait for health checks
-./scripts/blue-green/health-check.sh green
+../<service>/scripts/deploy.sh                    # Full cycle (recommended)
+./scripts/blue-green/switch-traffic.sh <service>  # Switch only
+./scripts/blue-green/rollback.sh <service>        # Rollback
+./scripts/blue-green/health-check.sh <color>      # Check health
 ```
 
-### 2. Update Nginx Configuration
+## Config Validation Pipeline
 
-The deployment script automatically:
+New configs go through: `staging/` → isolated test → `blue-green/` (valid) or `rejected/` (invalid). Nginx never breaks due to a bad config — invalid configs are rejected and nginx continues with existing valid configs.
 
-- Generates green nginx config
-- Validates configuration
-- Updates symlink to point to green config
-- Reloads nginx
+## Container Naming
+
+- Blue: `{service-name}-blue`
+- Green: `{service-name}-green`
+
+All containers must be on `nginx-network` (external Docker network).
+
+## Verify Deployment
 
 ```bash
-./scripts/blue-green/deploy-smart.sh {application} green
+ls -la nginx/conf.d/<domain>.conf       # Check symlink
+cat nginx/conf.d/<domain>.conf | grep upstream  # Check active color
+curl https://<domain>/health            # Test endpoint
 ```
 
-### 3. Verify Traffic
+## Rollback
 
 ```bash
-# Check which environment is active
-ls -la nginx/conf.d/{domain}.conf
-
-# Test endpoints
-curl https://{domain}/health
-```
-
-### 4. Rollback (if needed)
-
-```bash
-./scripts/blue-green/rollback.sh {application}
-```
-
-## Service Registry
-
-**⚠️ IMPORTANT**: Service registry files are **automatically created and managed** by the deployment script. **DO NOT** create or modify them manually in individual service codebases.
-
-### How Service Registry Works
-
-1. Service registry files are stored in `nginx-microservice/service-registry/` directory
-2. They are automatically created/recreated during deployment by `deploy-smart.sh`
-3. The deployment script auto-detects service configuration from:
-   - Docker compose files (`docker-compose.blue.yml`, `docker-compose.green.yml`)
-   - Environment variables (`.env` file)
-   - Running containers
-   - Container port mappings
-
-### Service Registry Structure
-
-Each service registry file in `service-registry/{service}.json` has the following structure:
-
-```json
-{
-  "service_name": "crypto-ai-agent",
-  "production_path": "/home/statex/crypto-ai-agent",
-  "domain": "crypto-ai-agent.alfares.cz",
-  "docker_compose_file": "docker-compose.green.yml",
-  "docker_project_base": "crypto_ai_agent",
-  "services": {
-    "backend": {
-      "container_name_base": "crypto-ai-backend",
-      "container_port": 3102,  // Container port - must match container port in docker-compose.yml (from .env: API_PORT, default: 3102)
-      "health_endpoint": "/api/health",
-      "health_timeout": 10,
-      "health_retries": 2,
-      "startup_time": 10
-    },
-    "frontend": {
-      "container_name_base": "crypto-ai-frontend",
-      "container_port": 3100,  // Container port - must match container port in docker-compose.yml (from .env: FRONTEND_PORT, default: 3100)
-      "health_endpoint": "/",
-      "health_timeout": 10,
-      "health_retries": 2,
-      "startup_time": 10
-    }
-  },
-  "domains": {
-    "crypto-ai-agent.alfares.cz": {
-      "active_color": "green",
-      "services": ["frontend", "backend"]
-    }
-  },
-  "shared_services": [],
-  "network": "nginx-network"
-}
-```
-
-**⚠️ IMPORTANT - Port Synchronization**:
-
-- **Port values in service registry files are container ports** (not host ports)
-- **Ports must match the container ports** configured in each service's `docker-compose.yml` and `.env` files
-- **When ports change**: Update the service's `.env` file - the deployment script will automatically update the service registry
-
-**⚠️ DO NOT**:
-
-- Create `service-registry.json` files in individual service codebases
-- Manually edit service registry files on production
-- Commit service registry files to service repositories
-
-For complete documentation, see [Service Registry Documentation](../../docs/SERVICE_REGISTRY.md).
-
-- **After updating ports**: Regenerate nginx configs by running: `./scripts/blue-green/deploy.sh {service-name}`
-- **Service registry files use hardcoded port values** because JSON doesn't support environment variable substitution
-- **Nginx configs are auto-generated** from service registry files, so they will automatically use the updated ports after regeneration
-
-The deployment scripts use this registry to:
-
-- Generate correct nginx upstream blocks
-- Determine health check endpoints
-- Map container names to ports
-
-## Health Checks
-
-Before switching traffic, services must pass health checks:
-
-```bash
-# Health check script tests:
-# 1. Container is running
-# 2. Health endpoint responds
-# 3. Service is ready to accept traffic
-
-./scripts/blue-green/health-check.sh {color}
-```
-
-## Nginx Configuration Validation
-
-All nginx configs go through validation:
-
-1. **Generate to staging**: New config written to `nginx/conf.d/staging/`
-2. **Validate**: Test config with `nginx -t`
-3. **Apply**: Move to `nginx/conf.d/blue-green/` if valid
-4. **Reject**: Move to `nginx/conf.d/rejected/` if invalid
-
-This ensures nginx never breaks due to a bad configuration.
-
-## Container Naming Convention
-
-Containers follow this naming pattern:
-
-- Blue: `{service-name}-{color}`
-- Green: `{service-name}-{color}`
-
-Examples:
-
-- `crypto-ai-backend-blue`
-- `crypto-ai-backend-green`
-- `logging-microservice-blue`
-- `logging-microservice-green`
-
-## Network Requirements
-
-All containers must be on the `nginx-network`:
-
-```yaml
-networks:
-  nginx-network:
-    external: true
-    name: nginx-network
+./scripts/blue-green/rollback.sh <service>
+# Or manually:
+cd nginx/conf.d && ln -sf blue-green/<domain>.blue.conf <domain>.conf
+docker exec nginx-microservice nginx -s reload
 ```
 
 ## Troubleshooting
 
-### 502 Errors After Switch
 
-1. Check containers are running:
+| Problem            | Fix                                                                      |
+| ------------------ | ------------------------------------------------------------------------ |
+| 502 after switch   | `docker ps | grep <service>` — containers running? Check `nginx-network` |
+| Config not applied | `ls nginx/conf.d/rejected/` — validation failed?                         |
+| Rollback fails     | Manually update symlink (see above)                                      |
 
-   ```bash
-   docker ps | grep {service-name}
-   ```
 
-2. Check health endpoints:
-
-   ```bash
-   docker exec {container} curl http://localhost:{port}/health
-   ```
-
-3. Check nginx upstream:
-
-   ```bash
-   docker exec nginx-microservice nginx -T | grep upstream
-   ```
-
-4. Check network connectivity:
-
-   ```bash
-   docker exec nginx-microservice ping {container-name}
-   ```
-
-### Configuration Not Applied
-
-1. Check symlink:
-
-   ```bash
-   ls -la nginx/conf.d/{domain}.conf
-   ```
-
-2. Check validation:
-
-   ```bash
-   ls -la nginx/conf.d/rejected/
-   ```
-
-3. Test nginx config:
-
-   ```bash
-   docker exec nginx-microservice nginx -t
-   ```
-
-### Rollback Issues
-
-If rollback fails:
-
-1. Manually update symlink:
-
-   ```bash
-   cd nginx/conf.d
-   ln -sf blue-green/{domain}.blue.conf {domain}.conf
-   ```
-
-2. Reload nginx:
-
-   ```bash
-   docker exec nginx-microservice nginx -s reload
-   ```
-
-## Best Practices
-
-1. **Always test green before switching**: Run health checks
-2. **Monitor after switch**: Watch logs and metrics
-3. **Keep blue running**: Don't stop blue until green is confirmed stable
-4. **Use health checks**: Never switch without passing health checks
-5. **Validate configs**: All configs are validated before application
-
-## Scripts Reference
-
-- `deploy-smart.sh` - Smart deployment with health checks
-- `health-check.sh` - Check service health
-- `switch-traffic.sh` - Switch traffic between blue/green
-- `rollback.sh` - Rollback to previous environment
-- `prepare-green-smart.sh` - Prepare green environment
-
-See individual script documentation for detailed usage.
