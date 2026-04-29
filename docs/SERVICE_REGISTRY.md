@@ -21,7 +21,7 @@ Then creates/updates `service-registry/<service-name>.json` and generates nginx 
 ```json
 {
   "service_name": "allegro-service",
-  "production_path": "/home/statex/allegro-service",
+  "production_path": "~/Documents/Github/allegro-service",
   "domain": "allegro.alfares.cz",
   "docker_compose_file": "docker-compose.green.yml",
   "docker_project_base": "allegro_service",

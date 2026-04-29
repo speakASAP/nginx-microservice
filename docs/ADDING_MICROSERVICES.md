@@ -17,7 +17,7 @@ Stored in `nginx-microservice/service-registry/<service>.json`. Created/updated 
 ```json
 {
   "service_name": "my-microservice",
-  "production_path": "/home/statex/my-microservice",
+  "production_path": "~/Documents/Github/my-microservice",
   "domain": "my-service.alfares.cz",
   "docker_compose_file": "docker-compose.blue.yml",
   "docker_project_base": "my_microservice",
