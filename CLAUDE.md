@@ -6,17 +6,22 @@
 
 ## nginx-microservice
 
-**Purpose**: Centralized reverse proxy managing SSL (Let's Encrypt), routing, and blue/green deployments for all Statex domains. Docker on host — not in Kubernetes.
-**Stack**: Nginx · Docker · Certbot (Let's Encrypt)
+⚠️ **RETIRED as active proxy** — replaced by Traefik v3 (hostNetwork) in Kubernetes on 2026-05-05.  
+This repo is retained as an **archive** of service registry configs, certificate history, and blue/green templates.  
+All live traffic now flows through Traefik → K8s ingresses in `statex-apps` namespace.
 
-### CRITICAL: Never edit nginx-microservice files directly for a specific service
+**Current ingress**: Traefik v3 · TLS via cert-manager + Cloudflare DNS-01 · wildcard `*.alfares.cz`  
+**Docker containers**: Stopped and removed. No nginx process is running on ports 80/443.
 
-Each application service owns its nginx config under its own `nginx/` directory. The `deploy.sh` script patches the nginx-microservice config post-deploy. Do not hand-edit files in this repo for another service's routing.
+### What this repo still contains (reference only)
+- `service-registry/*.json` — historical per-service routing config
+- `nginx/conf.d/` — historical nginx vhost configs
+- `scripts/blue-green/` — archived blue/green deploy scripts (no longer used)
+- `k8s-rehtani/` — K8s manifests for the rehtani placeholder site
 
-### Key constraints
+### Do not use for new work
+All routing changes must be made via K8s Ingress manifests in each service's `k8s/` directory.  
+Traefik reads ingresses from the `statex-apps` namespace automatically on apply.
 
-- `*.alfares.cz` uses DNS-01 wildcard certs — keep `certbot/scripts/symlink-subdomains-to-wildcard.sh` `SUBDOMAINS` list aligned with every `*.alfares.cz` vhost
-- Blue/green switch only via `deploy-smart.sh` — never manual
-- SSL certs managed by Certbot — do not manually edit cert files
-- Secrets (Cloudflare API token) in Vault — see [../shared/docs/VAULT.md](../shared/docs/VAULT.md)
-- Downstream services run in Kubernetes (`statex-apps` namespace) — see `kubectl get svc -n statex-apps`
+**Check live ingresses**: `kubectl get ingress -n statex-apps`  
+**Check Traefik**: `kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik`

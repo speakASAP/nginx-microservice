@@ -1,22 +1,34 @@
 # System: nginx-microservice
 
-## Architecture
+⚠️ **RETIRED** — replaced by Traefik v3 in Kubernetes (2026-05-05).
 
-Nginx + Docker + Certbot. Runs on host (ports 80/443). Service registry in `service-registry/*.json`.
+## Current ingress architecture
 
-- Blue/green: `deploy-smart.sh <service>` — builds, health-checks, switches, stops old
-- SSL: auto-renewed via Certbot cron; `*.alfares.cz` uses DNS-01 wildcard — keep `certbot/scripts/symlink-subdomains-to-wildcard.sh` `SUBDOMAINS` list aligned with every `*.alfares.cz` vhost
-- Config: `../<service>/nginx/` → `nginx/sites/<service>.conf` + `nginx-api-routes.conf` per service
-- Secrets: Cloudflare API token via Vault — see [../shared/docs/VAULT.md](../shared/docs/VAULT.md)
+- **Ingress controller**: Traefik v3 Helm chart, `hostNetwork: true`, ports 80/443
+- **TLS**: cert-manager + Cloudflare DNS-01 → wildcard `*.alfares.cz` (Let's Encrypt)
+- **Ingresses**: 31 ingresses in `statex-apps` namespace
+- **Namespace**: `kube-system` (Traefik pod)
 
-## Integrations
+## Quick ops
 
-Routes traffic to all services by domain. Most downstream services run as **Kubernetes pods** in `statex-apps` namespace (`kubectl get svc -n statex-apps`). Nginx-microservice itself remains Docker on host.
+```bash
+# Check Traefik
+kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik
+
+# List all ingresses
+kubectl get ingress -n statex-apps
+
+# View a specific ingress
+kubectl get ingress <service-name> -n statex-apps -o yaml
+
+# Traefik logs
+kubectl logs -n kube-system -l app.kubernetes.io/name=traefik -f
+```
+
+## Archived content
+
+This repo contains historical nginx configs and service registry entries from the Docker-era proxy.  
+They are not used in production. New routing is defined in each service's `k8s/ingress.yaml`.
 
 ## Current State
-<!-- AI-maintained -->
-Stage: production
-
-## Known Issues
-<!-- AI-maintained -->
-- None
+Stage: archived — no longer active in production
