@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: rehtani
+  namespace: statex-apps
+subsets:
+- addresses:
+  - ip: 192.168.88.53
+  ports:
+  - port: 4601
+    name: http
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: rehtani
+  namespace: statex-apps
+  labels:
+    app: rehtani
+    managed-by: k8s-migration
+spec:
+  ports:
+  - port: 4601
+    targetPort: 4601
+    name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: rehtani
+  namespace: statex-apps
+  labels:
+    app: rehtani
+    managed-by: k8s-migration
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: rehtani.alfares.cz
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: rehtani
+            port:
+              number: 4601
+  tls:
+  - hosts:
+    - rehtani.alfares.cz
+    secretName: rehtani-tls
