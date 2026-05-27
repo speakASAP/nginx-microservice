@@ -16,7 +16,7 @@ BASE="${1:-sgipreal.com}"
 if [ "$BASE" = "alfares.cz" ]; then
   SUBDOMAINS="allegro.alfares.cz auth.alfares.cz ai.alfares.cz beauty.alfares.cz crypto-ai-agent.alfares.cz \
     flipflop.alfares.cz logging.alfares.cz marathon.alfares.cz notifications.alfares.cz payments.alfares.cz \
-    shop-assistant.alfares.cz speakasap-assessment.alfares.cz speakasap-certification.alfares.cz speakasap.alfares.cz warehouse.alfares.cz catalog.alfares.cz supplier.alfares.cz \
+    shop-assistant.alfares.cz speakasap-assessment.alfares.cz speakasap-certification.alfares.cz speakasap.alfares.cz warehouse.alfares.cz catalog.alfares.cz suppliers.alfares.cz \
     orders.alfares.cz heureka.alfares.cz aukro.alfares.cz bazos.alfares.cz messenger.alfares.cz \
     leads.alfares.cz docs.alfares.cz status.alfares.cz"
 elif [ "$BASE" = "sgipreal.com" ]; then
