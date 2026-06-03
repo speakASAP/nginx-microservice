@@ -1,6 +1,6 @@
 # Adding Microservices
 
-> **New services**: Deploy to Kubernetes (`statex-apps` namespace) — see [../shared/docs/KUBERNETES_SETUP_GUIDE.md](../../shared/docs/KUBERNETES_SETUP_GUIDE.md). The Docker blue/green path below applies to legacy Docker services.
+Use Kubernetes service DNS for production datastore access: `db-server-postgres:5432`, `db-server-redis:6379`, and `qdrant:6333` in `statex-apps`.
 
 ## Overview
 
