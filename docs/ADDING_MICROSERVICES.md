@@ -1,6 +1,6 @@
 # Adding Microservices
 
-Use Kubernetes service DNS for production datastore access: `db-server-postgres:5432`, `db-server-redis:6379`, and `qdrant:6333` in `statex-apps`.
+Database access SSOT: [database-server/docs/ARCHITECTURE.md](../../database-server/docs/ARCHITECTURE.md).
 
 ## Overview
 
