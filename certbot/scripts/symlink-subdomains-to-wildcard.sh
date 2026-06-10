@@ -27,7 +27,7 @@ elif [ "$BASE" = "alfares.cz" ]; then
   SUBDOMAINS="aeps.alfares.cz agentic-email-processing-system.alfares.cz ai.alfares.cz allegro.alfares.cz \
     aukro.alfares.cz auth.alfares.cz catalog.alfares.cz flipflop.alfares.cz leads.alfares.cz \
     logging.alfares.cz marathon.alfares.cz messenger.alfares.cz minio.alfares.cz notifications.alfares.cz \
-    orchestrator.alfares.cz orders.alfares.cz payments.alfares.cz rehtani.alfares.cz shop-assistant.alfares.cz \
+    runlayer.alfares.cz orders.alfares.cz payments.alfares.cz rehtani.alfares.cz shop-assistant.alfares.cz \
     speakasap.alfares.cz statex-ecosystem.alfares.cz suppliers.alfares.cz warehouse.alfares.cz"
 else
   echo "Usage: symlink-subdomains-to-wildcard.sh [sgipreal.com|alfares.cz|alfares.cz]"
